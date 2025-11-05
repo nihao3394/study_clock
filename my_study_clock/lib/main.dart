@@ -357,13 +357,15 @@ class _StudyClockPageState extends State<StudyClockPage>
     }
   }
 
-  // 倒计时结束弹窗（核心优化：计算实际学习时长）
+  // 倒计时结束弹窗（核心优化：添加备注输入框）
   void _showCountdownCompleteDialog() {
     // 计算实际学习时长（当前时间 - 开始时间）
     final actualDurationSeconds = DateTime.now()
         .difference(_timerStartTime!)
         .inSeconds;
     final actualDuration = _formatTime(actualDurationSeconds);
+    // 弹窗专用备注控制器（避免与主界面控制器冲突）
+    final TextEditingController dialogNoteController = TextEditingController();
 
     showDialog(
       context: context,
@@ -374,9 +376,41 @@ class _StudyClockPageState extends State<StudyClockPage>
           "学习时长结束！",
           style: TextStyle(color: Colors.white, fontSize: 18),
         ),
-        content: Text(
-          "目标时长：${_formatTime(_targetDurationMinutes! * 60)}\n实际学习时长：$actualDuration",
-          style: const TextStyle(color: Colors.white70),
+        content: Column(
+          mainAxisSize: MainAxisSize.min, // 自适应高度
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // 时长信息
+            Text(
+              "目标时长：${_formatTime(_targetDurationMinutes! * 60)}\n实际学习时长：$actualDuration",
+              style: const TextStyle(color: Colors.white70),
+            ),
+            const SizedBox(height: 16),
+            // 备注输入框（新增）
+            TextField(
+              controller: dialogNoteController,
+              decoration: InputDecoration(
+                labelText: '添加备注（可选）',
+                hintText: '例如：数学刷题、英语背诵...',
+                labelStyle: TextStyle(color: Colors.white60),
+                hintStyle: TextStyle(color: Colors.white54),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(8),
+                  borderSide: BorderSide(color: Color(0xFF3A3A5A)),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(8),
+                  borderSide: BorderSide(color: Color(0xFF42A5F5), width: 2),
+                ),
+                contentPadding: EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 10,
+                ),
+              ),
+              style: const TextStyle(fontSize: 14, color: Colors.white),
+              cursorColor: const Color(0xFF42A5F5),
+            ),
+          ],
         ),
         actions: [
           TextButton(
@@ -385,15 +419,21 @@ class _StudyClockPageState extends State<StudyClockPage>
               String timeNow = DateFormat(
                 'yyyy-MM-dd HH:mm:ss',
               ).format(DateTime.now());
+              // 优先使用弹窗内的备注，为空则显示"无"
+              String note = dialogNoteController.text.trim().isEmpty
+                  ? '无'
+                  : dialogNoteController.text.trim();
               String log =
-                  "$timeNow | 目标时长：${_formatTime(_targetDurationMinutes! * 60)} | 实际学习时长：$actualDuration | 备注：${_noteController.text.isEmpty ? '无' : _noteController.text}";
+                  "$timeNow | 目标时长：${_formatTime(_targetDurationMinutes! * 60)} | 实际学习时长：$actualDuration | 备注：$note";
               setState(() {
                 _studyLogs.add(log);
-                _noteController.clear();
+                _noteController.clear(); // 清空主界面备注框
                 _targetDurationMinutes = null;
                 _timerStartTime = null; // 重置开始时间
               });
               _saveLogToFile(log);
+              // 释放弹窗控制器
+              dialogNoteController.dispose();
             },
             child: const Text(
               "确认记录",
