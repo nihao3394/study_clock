@@ -4,7 +4,7 @@ import 'dart:io';
 import 'dart:async';
 import 'package:path_provider/path_provider.dart';
 import 'package:audioplayers/audioplayers.dart';
-import 'package:file_picker/file_picker.dart'; // 文件选择依赖
+import 'package:file_picker/file_picker.dart';
 
 void main() {
   if (Platform.isWindows || Platform.isMacOS || Platform.isLinux) {
@@ -13,7 +13,6 @@ void main() {
   runApp(const StudyClockApp());
 }
 
-// 主题配置：暗色系柔和风格 + Material Design 3
 class StudyClockApp extends StatelessWidget {
   const StudyClockApp({super.key});
 
@@ -95,23 +94,29 @@ class _StudyClockPageState extends State<StudyClockPage>
   late File _logFile;
   late AnimationController _breathController;
 
-  // 新增：倒计时相关状态
+  // 倒计时核心状态
   int? _targetDurationMinutes; // 目标时长（分钟），null表示自由计时
-  int _selectedCustomMinutes = 30; // 自定义滚动选择的分钟数
-  bool _enableRingtone = true; // 是否启用铃声提示
-  final AudioPlayer _audioPlayer = AudioPlayer(); // 音频播放器
+  int _selectedCustomMinutes = 30;
+  bool _enableRingtone = true;
+  final AudioPlayer _audioPlayer = AudioPlayer();
 
-  // 铃声相关状态
+  // 铃声状态
   List<Map<String, String>> _builtInRingtones = [
-    // 内置铃声列表（key: 显示名称，value: 相对路径）
     {"name": "提示音1", "path": "sounds/clockstone_1.mp3"},
     {"name": "提示音2", "path": "sounds/clockstone_2.mp3"},
     {"name": "提示音3", "path": "sounds/clockstone_3.mp3"},
-    {"name": "提示音4", "path": "sounds/cs下包（整活：））.mp3"},
+    {"name": "提示音4", "path": "sounds/clockstone_cs.mp3"},
   ];
-  String? _selectedRingtonePath; // 选中的铃声路径（内置/自定义）
-  String? _customRingtoneFilePath; // 自定义铃声的本地文件路径
-  bool _isPlayingPreview = false; // 是否正在播放预览
+  String? _selectedRingtonePath;
+  String? _customRingtoneFilePath;
+  bool _isPlayingPreview = false; // 预览播放状态
+  PlayerState _audioPlayerState = PlayerState.stopped; // 音频播放器状态
+
+  // 可折叠区域状态
+  bool _isSettingsExpanded = true;
+
+  // 计时开始时间（用于计算实际学习时长）
+  DateTime? _timerStartTime;
 
   @override
   void initState() {
@@ -121,22 +126,28 @@ class _StudyClockPageState extends State<StudyClockPage>
       vsync: this,
       duration: const Duration(seconds: 2),
     )..repeat(reverse: true);
-    // 默认选中第一个内置铃声
     _selectedRingtonePath = _builtInRingtones[0]["path"];
     _preloadRingtone();
+    // 监听音频播放器状态变化
+    _audioPlayer.onPlayerStateChanged.listen((state) {
+      setState(() {
+        _audioPlayerState = state;
+        // 播放结束自动重置预览状态
+        if (state == PlayerState.stopped) {
+          _isPlayingPreview = false;
+        }
+      });
+    });
   }
 
-  // 预加载选中的铃声
   Future<void> _preloadRingtone() async {
     if (_selectedRingtonePath == null) return;
     try {
       if (_customRingtoneFilePath != null) {
-        // 预加载自定义本地文件
         await _audioPlayer.setSource(
           DeviceFileSource(_customRingtoneFilePath!),
         );
       } else {
-        // 预加载内置资源
         await _audioPlayer.setSource(AssetSource(_selectedRingtonePath!));
       }
     } catch (e) {
@@ -151,7 +162,181 @@ class _StudyClockPageState extends State<StudyClockPage>
     }
   }
 
-  // 播放铃声（预览/倒计时结束）
+  // 播放/暂停预览铃声（核心优化：支持随时启停）
+  Future<void> _togglePreviewRingtone() async {
+    if (!_enableRingtone || _selectedRingtonePath == null) return;
+
+    try {
+      if (_isPlayingPreview) {
+        // 正在播放 → 暂停
+        await _audioPlayer.pause();
+        setState(() => _isPlayingPreview = false);
+      } else {
+        // 未播放 → 播放（重新播放时重置到开头）
+        if (_audioPlayerState == PlayerState.paused) {
+          await _audioPlayer.resume();
+        } else {
+          // 首次播放或已停止，重新设置源并播放
+          if (_customRingtoneFilePath != null) {
+            await _audioPlayer.play(DeviceFileSource(_customRingtoneFilePath!));
+          } else {
+            await _audioPlayer.play(AssetSource(_selectedRingtonePath!));
+          }
+        }
+        setState(() => _isPlayingPreview = true);
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text("铃声预览失败：$e"),
+            backgroundColor: Colors.redAccent,
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _selectCustomRingtone() async {
+    FilePickerResult? result = await FilePicker.platform.pickFiles(
+      type: FileType.audio,
+      allowedExtensions: ['mp3', 'wav', 'ogg'],
+      dialogTitle: "选择本地铃声文件",
+    );
+    if (result != null && result.files.single.path != null) {
+      // 切换自定义铃声时停止当前预览
+      if (_isPlayingPreview) {
+        await _audioPlayer.stop();
+        _isPlayingPreview = false;
+      }
+      setState(() {
+        _customRingtoneFilePath = result.files.single.path;
+        _selectedRingtonePath = "自定义铃声";
+      });
+      await _preloadRingtone();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: const Text("自定义铃声已选中"),
+            backgroundColor: Theme.of(context).colorScheme.primary,
+          ),
+        );
+      }
+    }
+  }
+
+  void _switchToBuiltInRingtone(String path) {
+    // 切换内置铃声时停止当前预览
+    if (_isPlayingPreview) {
+      _audioPlayer.stop();
+      _isPlayingPreview = false;
+    }
+    setState(() {
+      _selectedRingtonePath = path;
+      _customRingtoneFilePath = null;
+    });
+    _preloadRingtone();
+  }
+
+  Future<void> _initLogFile() async {
+    final directory = await getApplicationDocumentsDirectory();
+    _logFile = File('${directory.path}/StudyClockLogs.txt');
+    if (await _logFile.exists()) {
+      final content = await _logFile.readAsString();
+      if (content.isNotEmpty) {
+        setState(() {
+          _studyLogs.addAll(
+            content.split('\n').where((line) => line.isNotEmpty),
+          );
+        });
+      }
+    }
+  }
+
+  String _formatTime(int seconds) {
+    int h = seconds ~/ 3600;
+    int m = (seconds % 3600) ~/ 60;
+    int s = seconds % 60;
+    return "${h.toString().padLeft(2, '0')}:${m.toString().padLeft(2, '0')}:${s.toString().padLeft(2, '0')}";
+  }
+
+  Future<void> _saveLogToFile(String log) async {
+    await _logFile.writeAsString('$log\n', mode: FileMode.append);
+  }
+
+  void _selectFixedDuration(int minutes) {
+    setState(() {
+      _targetDurationMinutes = minutes;
+      _seconds = minutes * 60; // 初始化为目标时长（秒）
+    });
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text("已选择 ${minutes}分钟学习时长"),
+        backgroundColor: Theme.of(context).colorScheme.primary,
+        behavior: SnackBarBehavior.floating,
+        duration: const Duration(seconds: 1),
+      ),
+    );
+  }
+
+  void _confirmCustomDuration() {
+    setState(() {
+      _targetDurationMinutes = _selectedCustomMinutes;
+      _seconds = _selectedCustomMinutes * 60; // 初始化为目标时长（秒）
+    });
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text("已选择自定义 ${_selectedCustomMinutes}分钟学习时长"),
+        backgroundColor: Theme.of(context).colorScheme.primary,
+        behavior: SnackBarBehavior.floating,
+        duration: const Duration(seconds: 1),
+      ),
+    );
+  }
+
+  void _cancelDurationSelection() {
+    setState(() {
+      _targetDurationMinutes = null;
+      _seconds = 0;
+      _timerStartTime = null; // 重置开始时间
+    });
+  }
+
+  // 开始计时（核心新增：倒计时启动时自动折叠设置区域）
+  void _startTimer() {
+    if (!_isRunning) {
+      setState(() {
+        _isRunning = true;
+        _timerStartTime = DateTime.now(); // 记录计时开始时间
+        // 核心新增：如果设置区域是展开状态，自动折叠
+        if (_isSettingsExpanded) {
+          _isSettingsExpanded = false;
+        }
+      });
+      _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
+        setState(() {
+          if (_targetDurationMinutes != null) {
+            // 倒计时模式：秒数递减
+            if (_seconds > 0) {
+              _seconds--;
+            } else {
+              // 倒计时结束
+              _timer.cancel();
+              _isRunning = false;
+              _playRingtone();
+              _showCountdownCompleteDialog();
+            }
+          } else {
+            // 自由计时：秒数递增
+            _seconds++;
+          }
+        });
+      });
+      _breathController.forward();
+    }
+  }
+
+  // 播放结束铃声
   Future<void> _playRingtone() async {
     if (!_enableRingtone || _selectedRingtonePath == null) return;
     try {
@@ -172,145 +357,14 @@ class _StudyClockPageState extends State<StudyClockPage>
     }
   }
 
-  // 预览铃声
-  Future<void> _previewRingtone() async {
-    if (_selectedRingtonePath == null) return;
-    setState(() => _isPlayingPreview = true);
-    await _playRingtone();
-    // 播放结束后重置状态
-    _audioPlayer.onPlayerComplete.listen((_) {
-      if (mounted) setState(() => _isPlayingPreview = false);
-    });
-  }
-
-  // 选择自定义本地铃声
-  Future<void> _selectCustomRingtone() async {
-    FilePickerResult? result = await FilePicker.platform.pickFiles(
-      type: FileType.audio,
-      allowedExtensions: ['mp3', 'wav', 'ogg'], // 支持的音频格式
-      dialogTitle: "选择本地铃声文件",
-    );
-    if (result != null && result.files.single.path != null) {
-      setState(() {
-        _customRingtoneFilePath = result.files.single.path;
-        _selectedRingtonePath = "自定义铃声"; // 标记为自定义铃声
-      });
-      await _preloadRingtone(); // 预加载选中的自定义铃声
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: const Text("自定义铃声已选中"),
-            backgroundColor: Theme.of(context).colorScheme.primary,
-          ),
-        );
-      }
-    }
-  }
-
-  // 切换回内置铃声
-  void _switchToBuiltInRingtone(String path) {
-    setState(() {
-      _selectedRingtonePath = path;
-      _customRingtoneFilePath = null; // 清空自定义铃声路径
-    });
-    _preloadRingtone();
-  }
-
-  // 初始化日志文件
-  Future<void> _initLogFile() async {
-    final directory = await getApplicationDocumentsDirectory();
-    _logFile = File('${directory.path}/StudyClockLogs.txt');
-    if (await _logFile.exists()) {
-      final content = await _logFile.readAsString();
-      if (content.isNotEmpty) {
-        setState(() {
-          _studyLogs.addAll(
-            content.split('\n').where((line) => line.isNotEmpty),
-          );
-        });
-      }
-    }
-  }
-
-  // 格式化时间（00:00:00）
-  String _formatTime(int seconds) {
-    int h = seconds ~/ 3600;
-    int m = (seconds % 3600) ~/ 60;
-    int s = seconds % 60;
-    return "${h.toString().padLeft(2, '0')}:${m.toString().padLeft(2, '0')}:${s.toString().padLeft(2, '0')}";
-  }
-
-  // 保存日志到本地
-  Future<void> _saveLogToFile(String log) async {
-    await _logFile.writeAsString('$log\n', mode: FileMode.append);
-  }
-
-  // 选择固定时长
-  void _selectFixedDuration(int minutes) {
-    setState(() {
-      _targetDurationMinutes = minutes;
-      _seconds = minutes * 60;
-    });
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text("已选择 ${minutes}分钟学习时长"),
-        backgroundColor: Theme.of(context).colorScheme.primary,
-        behavior: SnackBarBehavior.floating,
-        duration: const Duration(seconds: 1),
-      ),
-    );
-  }
-
-  // 确认自定义时长
-  void _confirmCustomDuration() {
-    setState(() {
-      _targetDurationMinutes = _selectedCustomMinutes;
-      _seconds = _selectedCustomMinutes * 60;
-    });
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text("已选择自定义 ${_selectedCustomMinutes}分钟学习时长"),
-        backgroundColor: Theme.of(context).colorScheme.primary,
-        behavior: SnackBarBehavior.floating,
-        duration: const Duration(seconds: 1),
-      ),
-    );
-  }
-
-  // 取消选择时长（回到自由计时）
-  void _cancelDurationSelection() {
-    setState(() {
-      _targetDurationMinutes = null;
-      _seconds = 0;
-    });
-  }
-
-  // 开始计时
-  void _startTimer() {
-    if (!_isRunning) {
-      setState(() => _isRunning = true);
-      _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
-        setState(() {
-          if (_targetDurationMinutes != null) {
-            if (_seconds > 0) {
-              _seconds--;
-            } else {
-              _timer.cancel();
-              _isRunning = false;
-              _playRingtone();
-              _showCountdownCompleteDialog();
-            }
-          } else {
-            _seconds++;
-          }
-        });
-      });
-      _breathController.forward();
-    }
-  }
-
-  // 倒计时结束弹窗
+  // 倒计时结束弹窗（核心优化：计算实际学习时长）
   void _showCountdownCompleteDialog() {
+    // 计算实际学习时长（当前时间 - 开始时间）
+    final actualDurationSeconds = DateTime.now()
+        .difference(_timerStartTime!)
+        .inSeconds;
+    final actualDuration = _formatTime(actualDurationSeconds);
+
     showDialog(
       context: context,
       barrierDismissible: false,
@@ -320,9 +374,9 @@ class _StudyClockPageState extends State<StudyClockPage>
           "学习时长结束！",
           style: TextStyle(color: Colors.white, fontSize: 18),
         ),
-        content: const Text(
-          "恭喜你完成本次学习目标～",
-          style: TextStyle(color: Colors.white70),
+        content: Text(
+          "目标时长：${_formatTime(_targetDurationMinutes! * 60)}\n实际学习时长：$actualDuration",
+          style: const TextStyle(color: Colors.white70),
         ),
         actions: [
           TextButton(
@@ -332,11 +386,12 @@ class _StudyClockPageState extends State<StudyClockPage>
                 'yyyy-MM-dd HH:mm:ss',
               ).format(DateTime.now());
               String log =
-                  "$timeNow | 学习时长：${_formatTime(_targetDurationMinutes! * 60)} | 备注：${_noteController.text.isEmpty ? '无' : _noteController.text}";
+                  "$timeNow | 目标时长：${_formatTime(_targetDurationMinutes! * 60)} | 实际学习时长：$actualDuration | 备注：${_noteController.text.isEmpty ? '无' : _noteController.text}";
               setState(() {
                 _studyLogs.add(log);
                 _noteController.clear();
                 _targetDurationMinutes = null;
+                _timerStartTime = null; // 重置开始时间
               });
               _saveLogToFile(log);
             },
@@ -350,7 +405,6 @@ class _StudyClockPageState extends State<StudyClockPage>
     );
   }
 
-  // 暂停计时
   void _pauseTimer() {
     if (_isRunning) {
       setState(() => _isRunning = false);
@@ -359,20 +413,42 @@ class _StudyClockPageState extends State<StudyClockPage>
     }
   }
 
-  // 结束计时 + 保存日志
+  // 结束计时 + 保存日志（核心优化：统一计算实际学习时长）
   void _endTimer() {
     _pauseTimer();
-    if (_seconds == 0) return;
+    if (_timerStartTime == null ||
+        (DateTime.now().difference(_timerStartTime!).inSeconds < 1)) {
+      // 未有效计时，不保存
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: const Text("未检测到有效学习时长 ❌"),
+            backgroundColor: Colors.redAccent,
+          ),
+        );
+      }
+      return;
+    }
+
+    // 计算实际学习时长（当前时间 - 开始时间）
+    final actualDurationSeconds = DateTime.now()
+        .difference(_timerStartTime!)
+        .inSeconds;
+    final actualDuration = _formatTime(actualDurationSeconds);
+    final targetDurationText = _targetDurationMinutes != null
+        ? _formatTime(_targetDurationMinutes! * 60)
+        : "无";
 
     String timeNow = DateFormat('yyyy-MM-dd HH:mm:ss').format(DateTime.now());
     String log =
-        "$timeNow | 学习时长：${_formatTime(_seconds)} | 备注：${_noteController.text.isEmpty ? '无' : _noteController.text}";
+        "$timeNow | 目标时长：$targetDurationText | 实际学习时长：$actualDuration | 备注：${_noteController.text.isEmpty ? '无' : _noteController.text}";
 
     setState(() {
       _studyLogs.add(log);
       _seconds = 0;
       _noteController.clear();
       _targetDurationMinutes = null;
+      _timerStartTime = null; // 重置开始时间
     });
 
     _saveLogToFile(log)
@@ -407,7 +483,6 @@ class _StudyClockPageState extends State<StudyClockPage>
         });
   }
 
-  // 删除单条日志
   void _deleteLog(int index) async {
     setState(() {
       _studyLogs.removeAt(index);
@@ -440,281 +515,355 @@ class _StudyClockPageState extends State<StudyClockPage>
           padding: const EdgeInsets.all(20.0),
           child: Column(
             children: [
-              // 时长选择区域
-              Container(
-                padding: const EdgeInsets.symmetric(
-                  vertical: 16,
-                  horizontal: 20,
-                ),
-                decoration: BoxDecoration(
-                  color: const Color(0xFF24243E),
-                  borderRadius: BorderRadius.circular(12),
-                  boxShadow: const [
-                    BoxShadow(color: Colors.black12, blurRadius: 8),
-                  ],
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text(
-                      "选择学习时长（可选）",
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w500,
-                        color: Colors.white,
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    // 固定时长选项
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        _DurationButton(
-                          minutes: 20,
-                          onTap: _selectFixedDuration,
-                          isSelected: _targetDurationMinutes == 20,
+              // 可折叠设置区域
+              AnimatedSize(
+                duration: const Duration(milliseconds: 300),
+                child: _isSettingsExpanded
+                    ? Container(
+                        padding: const EdgeInsets.symmetric(
+                          vertical: 16,
+                          horizontal: 20,
                         ),
-                        _DurationButton(
-                          minutes: 40,
-                          onTap: _selectFixedDuration,
-                          isSelected: _targetDurationMinutes == 40,
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF24243E),
+                          borderRadius: BorderRadius.circular(12),
+                          boxShadow: const [
+                            BoxShadow(color: Colors.black12, blurRadius: 8),
+                          ],
                         ),
-                        _DurationButton(
-                          minutes: 60,
-                          onTap: _selectFixedDuration,
-                          isSelected: _targetDurationMinutes == 60,
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 16),
-                    // 自定义时长（滚动旋钮）
-                    Row(
-                      children: [
-                        const Text(
-                          "自定义：",
-                          style: TextStyle(color: Colors.white70, fontSize: 14),
-                        ),
-                        const SizedBox(width: 10),
-                        Expanded(
-                          child: SizedBox(
-                            height: 80,
-                            child: ListWheelScrollView.useDelegate(
-                              itemExtent: 40,
-                              physics: const FixedExtentScrollPhysics(),
-                              controller: FixedExtentScrollController(
-                                initialItem: _selectedCustomMinutes - 1,
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                const Text(
+                                  "设置",
+                                  style: TextStyle(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.w500,
+                                    color: Colors.white,
+                                  ),
+                                ),
+                                IconButton(
+                                  icon: const Icon(
+                                    Icons.expand_less,
+                                    color: Colors.white70,
+                                  ),
+                                  onPressed: () => setState(
+                                    () => _isSettingsExpanded = false,
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const Divider(color: Colors.white10, height: 16),
+                            // 时长选择
+                            const Text(
+                              "选择学习时长（可选）",
+                              style: TextStyle(
+                                fontSize: 14,
+                                color: Colors.white70,
                               ),
-                              onSelectedItemChanged: (int index) {
-                                setState(
-                                  () => _selectedCustomMinutes = index + 1,
-                                );
-                              },
-                              childDelegate: ListWheelChildBuilderDelegate(
-                                childCount: 120,
-                                builder: (context, index) {
-                                  final minutes = index + 1;
-                                  final isSelected =
-                                      _selectedCustomMinutes == minutes;
-                                  return Center(
-                                    child: Text(
-                                      "$minutes 分钟",
-                                      style: TextStyle(
-                                        fontSize: isSelected ? 18 : 14,
-                                        fontWeight: isSelected
-                                            ? FontWeight.bold
-                                            : FontWeight.normal,
-                                        color: isSelected
-                                            ? Theme.of(
-                                                context,
-                                              ).colorScheme.primary
-                                            : Colors.white70,
+                            ),
+                            const SizedBox(height: 8),
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                _DurationButton(
+                                  minutes: 20,
+                                  onTap: _selectFixedDuration,
+                                  isSelected: _targetDurationMinutes == 20,
+                                ),
+                                _DurationButton(
+                                  minutes: 40,
+                                  onTap: _selectFixedDuration,
+                                  isSelected: _targetDurationMinutes == 40,
+                                ),
+                                _DurationButton(
+                                  minutes: 60,
+                                  onTap: _selectFixedDuration,
+                                  isSelected: _targetDurationMinutes == 60,
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 12),
+                            Row(
+                              children: [
+                                const Text(
+                                  "自定义：",
+                                  style: TextStyle(
+                                    color: Colors.white70,
+                                    fontSize: 14,
+                                  ),
+                                ),
+                                const SizedBox(width: 10),
+                                Expanded(
+                                  child: SizedBox(
+                                    height: 100, // 增加高度，提升滚动体验
+                                    child: ListWheelScrollView.useDelegate(
+                                      itemExtent: 50, // 增大item高度，滚动更明显
+                                      physics:
+                                          const ClampingScrollPhysics(), // 平滑滚动（替代Bouncing，适配全平台）
+                                      controller: FixedExtentScrollController(
+                                        initialItem: _selectedCustomMinutes - 1,
                                       ),
+                                      onSelectedItemChanged: (int index) {
+                                        setState(
+                                          () => _selectedCustomMinutes =
+                                              index + 1,
+                                        );
+                                      },
+                                      childDelegate:
+                                          ListWheelChildBuilderDelegate(
+                                            childCount: 120,
+                                            builder: (context, index) {
+                                              final minutes = index + 1;
+                                              final isSelected =
+                                                  _selectedCustomMinutes ==
+                                                  minutes;
+                                              return Center(
+                                                child: Text(
+                                                  "$minutes 分钟",
+                                                  style: TextStyle(
+                                                    fontSize: isSelected
+                                                        ? 20
+                                                        : 16,
+                                                    fontWeight: isSelected
+                                                        ? FontWeight.bold
+                                                        : FontWeight.normal,
+                                                    color: isSelected
+                                                        ? Theme.of(
+                                                            context,
+                                                          ).colorScheme.primary
+                                                        : Colors.white70,
+                                                  ),
+                                                ),
+                                              );
+                                            },
+                                          ),
                                     ),
-                                  );
-                                },
+                                  ),
+                                ),
+                                const SizedBox(width: 10),
+                                ElevatedButton(
+                                  onPressed: _confirmCustomDuration,
+                                  style: ElevatedButton.styleFrom(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 16,
+                                      vertical: 8,
+                                    ),
+                                    backgroundColor: Theme.of(
+                                      context,
+                                    ).colorScheme.primary,
+                                  ),
+                                  child: const Text("确认"),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 16),
+                            // 铃声设置
+                            const Text(
+                              "铃声设置",
+                              style: TextStyle(
+                                fontSize: 14,
+                                color: Colors.white70,
                               ),
                             ),
-                          ),
-                        ),
-                        const SizedBox(width: 10),
-                        ElevatedButton(
-                          onPressed: _confirmCustomDuration,
-                          style: ElevatedButton.styleFrom(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 16,
-                              vertical: 8,
+                            const SizedBox(height: 8),
+                            Row(
+                              children: [
+                                Switch(
+                                  value: _enableRingtone,
+                                  onChanged: (value) =>
+                                      setState(() => _enableRingtone = value),
+                                  activeColor: Theme.of(
+                                    context,
+                                  ).colorScheme.primary,
+                                  inactiveTrackColor: Colors.grey[700],
+                                ),
+                                const SizedBox(width: 6),
+                                const Text(
+                                  "启用铃声",
+                                  style: TextStyle(
+                                    color: Colors.white70,
+                                    fontSize: 14,
+                                  ),
+                                ),
+                                const SizedBox(width: 20),
+                                ElevatedButton(
+                                  onPressed: _enableRingtone
+                                      ? _togglePreviewRingtone
+                                      : null,
+                                  style: ElevatedButton.styleFrom(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 12,
+                                      vertical: 8,
+                                    ),
+                                    backgroundColor: _enableRingtone
+                                        ? Theme.of(
+                                            context,
+                                          ).colorScheme.secondary
+                                        : Colors.grey[700],
+                                    foregroundColor: Colors.white,
+                                  ),
+                                  child: Row(
+                                    children: [
+                                      // 核心优化：根据播放状态切换图标
+                                      Icon(
+                                        _isPlayingPreview
+                                            ? Icons.pause
+                                            : Icons.play_arrow,
+                                        size: 16,
+                                      ),
+                                      const SizedBox(width: 4),
+                                      Text(
+                                        _isPlayingPreview ? "暂停" : "预览",
+                                        style: const TextStyle(fontSize: 14),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ],
                             ),
-                            backgroundColor: Theme.of(
-                              context,
-                            ).colorScheme.primary,
-                          ),
-                          child: const Text("确认"),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 16),
-                    // 铃声设置区域
-                    const Text(
-                      "铃声设置",
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w500,
-                        color: Colors.white,
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    // 铃声开关 + 预览 + 选择
-                    Row(
-                      children: [
-                        Switch(
-                          value: _enableRingtone,
-                          onChanged: (value) =>
-                              setState(() => _enableRingtone = value),
-                          activeColor: Theme.of(context).colorScheme.primary,
-                          inactiveTrackColor: Colors.grey[700],
-                        ),
-                        const SizedBox(width: 6),
-                        const Text(
-                          "启用铃声",
-                          style: TextStyle(color: Colors.white70, fontSize: 14),
-                        ),
-                        const SizedBox(width: 20),
-                        ElevatedButton(
-                          onPressed: _enableRingtone ? _previewRingtone : null,
-                          style: ElevatedButton.styleFrom(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 12,
-                              vertical: 8,
-                            ),
-                            backgroundColor: _enableRingtone
-                                ? Theme.of(context).colorScheme.secondary
-                                : Colors.grey[700],
-                            foregroundColor: Colors.white,
-                          ),
-                          child: Row(
-                            children: [
-                              Icon(
-                                _isPlayingPreview
-                                    ? Icons.pause
-                                    : Icons.play_arrow,
-                                size: 16,
-                              ),
-                              const SizedBox(width: 4),
-                              const Text(
-                                "预览",
-                                style: TextStyle(
-                                  fontSize: 14,
-                                ), // 关键修正：移入 style 内部
-                              ),
-                            ],
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 12),
-                    // 内置铃声选择 + 自定义铃声按钮
-                    Row(
-                      children: [
-                        const Text(
-                          "选择铃声：",
-                          style: TextStyle(color: Colors.white70, fontSize: 14),
-                        ),
-                        const SizedBox(width: 10),
-                        // 内置铃声下拉选择
-                        Expanded(
-                          child: DropdownButtonFormField<String>(
-                            value: _selectedRingtonePath,
-                            items: [
-                              // 内置铃声选项
-                              ..._builtInRingtones.map((ringtone) {
-                                return DropdownMenuItem<String>(
-                                  value: ringtone["path"],
-                                  child: Text(
-                                    ringtone["name"]!,
+                            const SizedBox(height: 8),
+                            Row(
+                              children: [
+                                const Text(
+                                  "选择铃声：",
+                                  style: TextStyle(
+                                    color: Colors.white70,
+                                    fontSize: 14,
+                                  ),
+                                ),
+                                const SizedBox(width: 10),
+                                Expanded(
+                                  child: DropdownButtonFormField<String>(
+                                    value: _selectedRingtonePath,
+                                    items: [
+                                      ..._builtInRingtones.map((ringtone) {
+                                        return DropdownMenuItem<String>(
+                                          value: ringtone["path"],
+                                          child: Text(
+                                            ringtone["name"]!,
+                                            style: const TextStyle(
+                                              color: Colors.white70,
+                                            ),
+                                          ),
+                                        );
+                                      }),
+                                      const DropdownMenuItem<String>(
+                                        value: "自定义铃声",
+                                        child: Text(
+                                          "自定义铃声",
+                                          style: TextStyle(
+                                            color: Colors.white70,
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                    onChanged: (value) {
+                                      if (value == "自定义铃声") {
+                                        _selectCustomRingtone();
+                                      } else if (value != null) {
+                                        _switchToBuiltInRingtone(value);
+                                      }
+                                    },
+                                    decoration: InputDecoration(
+                                      border: OutlineInputBorder(
+                                        borderRadius: BorderRadius.circular(8),
+                                        borderSide: const BorderSide(
+                                          color: Color(0xFF3A3A5A),
+                                        ),
+                                      ),
+                                      contentPadding:
+                                          const EdgeInsets.symmetric(
+                                            horizontal: 12,
+                                            vertical: 8,
+                                          ),
+                                    ),
                                     style: const TextStyle(
                                       color: Colors.white70,
                                     ),
+                                    dropdownColor: const Color(0xFF24243E),
                                   ),
-                                );
-                              }),
-                              // 自定义铃声选项（仅作标记）
-                              const DropdownMenuItem<String>(
-                                value: "自定义铃声",
-                                child: Text(
-                                  "自定义铃声",
-                                  style: TextStyle(color: Colors.white70),
+                                ),
+                                const SizedBox(width: 10),
+                                ElevatedButton(
+                                  onPressed: _selectCustomRingtone,
+                                  style: ElevatedButton.styleFrom(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 12,
+                                      vertical: 8,
+                                    ),
+                                    backgroundColor: const Color(0xFF3A3A5A),
+                                  ),
+                                  child: const Row(
+                                    children: [
+                                      Icon(Icons.file_open, size: 16),
+                                      SizedBox(width: 4),
+                                      Text(
+                                        "本地",
+                                        style: TextStyle(fontSize: 14),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 8),
+                            Align(
+                              alignment: Alignment.centerRight,
+                              child: TextButton(
+                                onPressed: _cancelDurationSelection,
+                                child: const Text(
+                                  "取消选择",
+                                  style: TextStyle(color: Colors.redAccent),
                                 ),
                               ),
-                            ],
-                            onChanged: (value) {
-                              if (value == "自定义铃声") {
-                                _selectCustomRingtone(); // 打开文件选择器
-                              } else if (value != null) {
-                                _switchToBuiltInRingtone(value); // 切换到内置铃声
-                              }
-                            },
-                            decoration: InputDecoration(
-                              border: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(8),
-                                borderSide: const BorderSide(
-                                  color: Color(0xFF3A3A5A),
-                                ),
-                              ),
-                              contentPadding: const EdgeInsets.symmetric(
-                                horizontal: 12,
-                                vertical: 8,
+                            ),
+                          ],
+                        ),
+                      )
+                    : Container(
+                        padding: const EdgeInsets.symmetric(
+                          vertical: 12,
+                          horizontal: 20,
+                        ),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF24243E),
+                          borderRadius: BorderRadius.circular(12),
+                          boxShadow: const [
+                            BoxShadow(color: Colors.black12, blurRadius: 8),
+                          ],
+                        ),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            const Text(
+                              "设置（已折叠）",
+                              style: TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.w500,
+                                color: Colors.white,
                               ),
                             ),
-                            style: const TextStyle(color: Colors.white70),
-                            dropdownColor: const Color(0xFF24243E),
-                          ),
-                        ),
-                        const SizedBox(width: 10),
-                        // 自定义铃声按钮（补充入口）
-                        ElevatedButton(
-                          onPressed: _selectCustomRingtone,
-                          style: ElevatedButton.styleFrom(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 12,
-                              vertical: 8,
-                            ),
-                            backgroundColor: const Color(0xFF3A3A5A),
-                          ),
-                          child: const Row(
-                            children: [
-                              Icon(Icons.file_open, size: 16),
-                              SizedBox(width: 4),
-                              const Text(
-                                "预览",
-                                style: TextStyle(
-                                  fontSize: 14,
-                                ), // 关键修正：移入 style 内部
+                            IconButton(
+                              icon: const Icon(
+                                Icons.expand_more,
+                                color: Colors.white70,
                               ),
-                            ],
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 8),
-                    // 取消选择时长
-                    Align(
-                      alignment: Alignment.centerRight,
-                      child: TextButton(
-                        onPressed: _cancelDurationSelection,
-                        child: const Text(
-                          "取消选择",
-                          style: TextStyle(color: Colors.redAccent),
+                              onPressed: () =>
+                                  setState(() => _isSettingsExpanded = true),
+                            ),
+                          ],
                         ),
                       ),
-                    ),
-                  ],
-                ),
               ),
               const SizedBox(height: 20),
 
-              // 计时显示区域（带呼吸灯效果）
+              // 时间显示区域（居中突出）
               Expanded(
-                flex: 2,
+                flex: 3,
                 child: AnimatedBuilder(
                   animation: _breathController,
                   builder: (context, child) {
@@ -750,13 +899,13 @@ class _StudyClockPageState extends State<StudyClockPage>
                         child: Text(
                           _formatTime(_seconds),
                           style: TextStyle(
-                            fontSize: 64,
-                            fontWeight: FontWeight.w600,
+                            fontSize: 80,
+                            fontWeight: FontWeight.w800,
                             color:
                                 _targetDurationMinutes != null && _seconds <= 60
                                 ? Colors.redAccent
                                 : Theme.of(context).colorScheme.primary,
-                            letterSpacing: 2,
+                            letterSpacing: 4,
                           ),
                         ),
                       ),
@@ -766,7 +915,7 @@ class _StudyClockPageState extends State<StudyClockPage>
               ),
               const SizedBox(height: 20),
 
-              // 备注输入区域
+              // 备注输入
               TextField(
                 controller: _noteController,
                 decoration: const InputDecoration(
@@ -783,7 +932,7 @@ class _StudyClockPageState extends State<StudyClockPage>
               ),
               const SizedBox(height: 20),
 
-              // 控制按钮区域
+              // 控制按钮
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                 children: [
@@ -833,9 +982,9 @@ class _StudyClockPageState extends State<StudyClockPage>
               ),
               const SizedBox(height: 25),
 
-              // 日志列表区域
+              // 日志列表
               Expanded(
-                flex: 3,
+                flex: 2,
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
@@ -937,7 +1086,6 @@ class _StudyClockPageState extends State<StudyClockPage>
   }
 }
 
-// 时长选择按钮组件
 class _DurationButton extends StatelessWidget {
   final int minutes;
   final void Function(int) onTap;
