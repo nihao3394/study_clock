@@ -1500,7 +1500,7 @@ class _StudyClockPageState extends State<StudyClockPage>
               ],
             ),
           ),
-          // 主内容区 - 修复倒计时显示与备注的遮盖关系
+          // 主内容区 - 根据示例调整：使用 Column + Transform 来确保备注在时间上方覆盖
           Expanded(
             child: Container(
               color: Theme.of(context).colorScheme.background,
@@ -1908,18 +1908,20 @@ class _StudyClockPageState extends State<StudyClockPage>
                     ),
                     const SizedBox(height: 20),
 
-                    // 时间显示区域与备注：使用 Stack 让备注覆盖在时间上（解决覆盖层级问题）
+                    // 使用 Column + Transform 的覆盖实现（参考你给的示例）
+                    // 先渲染时间容器，并给出底部内间距以腾出被覆盖的空间；
+                    // 随后渲染备注输入，并通过 Transform.translate 将其向上移动覆盖在时间容器上方。
                     Expanded(
                       flex: 3,
-                      child: Stack(
-                        clipBehavior: Clip.none,
+                      child: Column(
                         children: [
-                          // 时间容器（底层）
-                          Positioned.fill(
+                          // 时间容器：我们在 padding 下方留出足够空间（例如 40）以便备注覆盖
+                          Expanded(
                             child: AnimatedBuilder(
                               animation: _breathController,
                               builder: (context, child) {
                                 return Container(
+                                  padding: const EdgeInsets.only(bottom: 40),
                                   decoration: BoxDecoration(
                                     gradient: LinearGradient(
                                       begin: Alignment.topLeft,
@@ -1956,15 +1958,13 @@ class _StudyClockPageState extends State<StudyClockPage>
                                       ),
                                       child: LayoutBuilder(
                                         builder: (context, constraints) {
-                                          // 根据可用宽度动态调整字体大小
-                                          double fontSize = 68;
+                                          double fontSize = 80;
                                           if (constraints.maxWidth < 400) {
                                             fontSize = 48;
                                           } else if (constraints.maxWidth <
                                               500) {
                                             fontSize = 56;
                                           }
-
                                           return Column(
                                             mainAxisAlignment:
                                                 MainAxisAlignment.center,
@@ -1994,9 +1994,9 @@ class _StudyClockPageState extends State<StudyClockPage>
                                                       : Theme.of(
                                                           context,
                                                         ).colorScheme.primary,
-                                                  letterSpacing: 2,
+                                                  letterSpacing: 4,
                                                 ),
-                                                overflow: TextOverflow.ellipsis,
+                                                overflow: TextOverflow.visible,
                                               ),
                                             ],
                                           );
@@ -2009,52 +2009,60 @@ class _StudyClockPageState extends State<StudyClockPage>
                             ),
                           ),
 
-                          // 备注输入（覆盖在时间之上）: 放在底部
-                          Positioned(
-                            left: 12,
-                            right: 12,
-                            bottom: -28, // 部分覆盖到时间容器（让它看起来在上层）
-                            child: Material(
-                              color: Colors.transparent,
-                              child: Container(
-                                decoration: BoxDecoration(
-                                  color: const Color(0xFF24243E),
-                                  borderRadius: BorderRadius.circular(8),
-                                  border: Border.all(
-                                    color: const Color(0xFF3A3A5A),
-                                  ),
-                                ),
-                                child: TextField(
-                                  controller: _noteController,
-                                  decoration: InputDecoration(
-                                    contentPadding: const EdgeInsets.symmetric(
-                                      horizontal: 12,
-                                      vertical: 14,
+                          // 通过 Transform.translate 向上位移，覆盖在时间容器上方
+                          Transform.translate(
+                            offset: const Offset(0, -28),
+                            child: SizedBox(
+                              // 与示例保持类似的视觉样式
+                              height: 56,
+                              child: Material(
+                                color: Colors.transparent,
+                                child: Container(
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFF24243E),
+                                    borderRadius: BorderRadius.circular(8),
+                                    border: Border.all(
+                                      color: const Color(0xFF3A3A5A),
                                     ),
-                                    prefixIcon: const Icon(
-                                      Icons.note_add_outlined,
-                                      color: Colors.white60,
-                                    ),
-                                    hintText: '例如：数学刷题、英语背诵...',
-                                    hintStyle: const TextStyle(
-                                      color: Colors.white54,
-                                    ),
-                                    border: InputBorder.none,
                                   ),
-                                  enabled: !_isRunning,
-                                  style: const TextStyle(
-                                    fontSize: 16,
-                                    color: Colors.white,
+                                  child: TextField(
+                                    controller: _noteController,
+                                    decoration: InputDecoration(
+                                      contentPadding:
+                                          const EdgeInsets.symmetric(
+                                            horizontal: 12,
+                                            vertical: 14,
+                                          ),
+                                      prefixIcon: const Icon(
+                                        Icons.note_add_outlined,
+                                        color: Colors.white60,
+                                      ),
+                                      hintText: '例如：数学刷题、英语背诵...',
+                                      hintStyle: const TextStyle(
+                                        color: Colors.white54,
+                                      ),
+                                      border: InputBorder.none,
+                                    ),
+                                    enabled: !_isRunning,
+                                    style: const TextStyle(
+                                      fontSize: 16,
+                                      color: Colors.white,
+                                    ),
+                                    cursorColor: const Color(0xFF42A5F5),
                                   ),
-                                  cursorColor: const Color(0xFF42A5F5),
                                 ),
                               ),
                             ),
                           ),
+
+                          // 给覆盖后退回布局的间距（避免被下方按钮/内容遮挡）
+                          const SizedBox(height: 12),
                         ],
                       ),
                     ),
-                    const SizedBox(height: 50), // 给覆叠出的备注预留空间
+
+                    const SizedBox(height: 8),
+
                     // 控制按钮
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceEvenly,
