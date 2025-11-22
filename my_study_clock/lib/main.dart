@@ -129,7 +129,7 @@ class _StudyClockPageState extends State<StudyClockPage>
     with SingleTickerProviderStateMixin {
   int _seconds = 0;
   bool _isRunning = false;
-  late Timer _timer;
+  Timer? _timer;
   final List<String> _studyLogs = [];
   final TextEditingController _noteController = TextEditingController();
   late File _logFile;
@@ -140,6 +140,7 @@ class _StudyClockPageState extends State<StudyClockPage>
   // 倒计时核心状态
   int? _targetDurationMinutes; // 目标时长（分钟），null表示自由计时
   int _selectedCustomMinutes = 30;
+  FixedExtentScrollController? _customMinutesController;
   bool _enableRingtone = true;
   final AudioPlayer _audioPlayer = AudioPlayer();
 
@@ -158,12 +159,11 @@ class _StudyClockPageState extends State<StudyClockPage>
   // 可折叠区域状态
   bool _isSettingsExpanded = true;
 
-  // 学科相关状态 - 修复折叠栏交互
+  // 学科相关状态 - 支持多个同时展开
   List<Subject> _subjects = [];
   List<SubjectStat> _subjectStats = []; // 学科累计时长统计
   Subject? _currentSubject;
-  bool _isSubjectsPanelExpanded = false; // 左侧栏是否展开
-  bool _isSubjectDetailExpanded = false;
+  final Set<String> _expandedSubjects = {}; // 使用学科 name 标识展开项
 
   // 计时开始时间（用于计算实际学习时长）
   DateTime? _timerStartTime;
@@ -178,15 +178,21 @@ class _StudyClockPageState extends State<StudyClockPage>
     )..repeat(reverse: true);
     _selectedRingtonePath = _builtInRingtones[0]["path"];
     _preloadRingtone();
+    _customMinutesController = FixedExtentScrollController(
+      initialItem: _selectedCustomMinutes - 1,
+    );
+
     // 监听音频播放器状态变化
     _audioPlayer.onPlayerStateChanged.listen((state) {
-      setState(() {
-        _audioPlayerState = state;
-        // 播放结束自动重置预览状态
-        if (state == PlayerState.stopped) {
-          _isPlayingPreview = false;
-        }
-      });
+      if (mounted) {
+        setState(() {
+          _audioPlayerState = state;
+          // 播放结束自动重置预览状态
+          if (state == PlayerState.stopped) {
+            _isPlayingPreview = false;
+          }
+        });
+      }
     });
   }
 
@@ -419,12 +425,13 @@ class _StudyClockPageState extends State<StudyClockPage>
         }
       });
       _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
+        if (!mounted) return;
         setState(() {
           if (_targetDurationMinutes != null) {
             if (_seconds > 0) {
               _seconds--;
             } else {
-              _timer.cancel();
+              _timer?.cancel();
               _isRunning = false;
               _playRingtone();
               _showCountdownCompleteDialog();
@@ -462,7 +469,7 @@ class _StudyClockPageState extends State<StudyClockPage>
   // 倒计时结束弹窗（带备注输入）
   void _showCountdownCompleteDialog() {
     final actualDurationSeconds = DateTime.now()
-        .difference(_timerStartTime!)
+        .difference(_timerStartTime ?? DateTime.now())
         .inSeconds;
     final actualDuration = _formatTime(actualDurationSeconds);
     final TextEditingController dialogNoteController = TextEditingController();
@@ -562,7 +569,7 @@ class _StudyClockPageState extends State<StudyClockPage>
   void _pauseTimer() {
     if (_isRunning) {
       setState(() => _isRunning = false);
-      _timer.cancel();
+      _timer?.cancel();
       _breathController.stop();
     }
   }
@@ -675,7 +682,7 @@ class _StudyClockPageState extends State<StudyClockPage>
     await _logFile.writeAsString(_studyLogs.join('\n') + '\n');
   }
 
-  // 添加新学科
+  // 添加新学科（使用 StatefulBuilder 管理对话框内部状态）
   void _addSubject() {
     final TextEditingController nameController = TextEditingController();
     final TextEditingController goalController = TextEditingController();
@@ -683,205 +690,475 @@ class _StudyClockPageState extends State<StudyClockPage>
 
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        backgroundColor: const Color(0xFF24243E),
-        title: const Text('添加学科', style: TextStyle(color: Colors.white)),
-        content: SizedBox(
-          width: 400,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextField(
-                controller: nameController,
-                decoration: InputDecoration(
-                  labelText: '学科名称',
-                  labelStyle: const TextStyle(color: Colors.white60),
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(8),
-                    borderSide: const BorderSide(color: Color(0xFF3A3A5A)),
-                  ),
-                  focusedBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(8),
-                    borderSide: const BorderSide(
-                      color: Color(0xFF42A5F5),
-                      width: 2,
-                    ),
-                  ),
-                ),
-                style: const TextStyle(color: Colors.white),
-                cursorColor: const Color(0xFF42A5F5),
-              ),
-              const SizedBox(height: 16),
-              const Text('重要度', style: TextStyle(color: Colors.white70)),
-              const SizedBox(height: 8),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+      builder: (context) => StatefulBuilder(
+        builder: (context, dialogSetState) {
+          return AlertDialog(
+            backgroundColor: const Color(0xFF24243E),
+            title: const Text('添加学科', style: TextStyle(color: Colors.white)),
+            content: SizedBox(
+              width: 400,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
                 children: [
-                  _PriorityColorButton(
-                    color: Colors.blue,
-                    isSelected: priority == 0,
-                    onTap: () => setState(() => priority = 0),
-                    showCheckmark: true,
+                  TextField(
+                    controller: nameController,
+                    decoration: InputDecoration(
+                      labelText: '学科名称',
+                      labelStyle: const TextStyle(color: Colors.white60),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8),
+                        borderSide: const BorderSide(color: Color(0xFF3A3A5A)),
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8),
+                        borderSide: const BorderSide(
+                          color: Color(0xFF42A5F5),
+                          width: 2,
+                        ),
+                      ),
+                    ),
+                    style: const TextStyle(color: Colors.white),
+                    cursorColor: const Color(0xFF42A5F5),
                   ),
-                  _PriorityColorButton(
-                    color: Colors.green,
-                    isSelected: priority == 1,
-                    onTap: () => setState(() => priority = 1),
-                    showCheckmark: true,
+                  const SizedBox(height: 16),
+                  const Text('重要度', style: TextStyle(color: Colors.white70)),
+                  const SizedBox(height: 8),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                    children: [
+                      _PriorityColorButton(
+                        color: Colors.blue,
+                        isSelected: priority == 0,
+                        onTap: () => dialogSetState(() => priority = 0),
+                        showCheckmark: true,
+                      ),
+                      _PriorityColorButton(
+                        color: Colors.green,
+                        isSelected: priority == 1,
+                        onTap: () => dialogSetState(() => priority = 1),
+                        showCheckmark: true,
+                      ),
+                      _PriorityColorButton(
+                        color: Colors.yellow,
+                        isSelected: priority == 2,
+                        onTap: () => dialogSetState(() => priority = 2),
+                        showCheckmark: true,
+                      ),
+                      _PriorityColorButton(
+                        color: Colors.orange,
+                        isSelected: priority == 3,
+                        onTap: () => dialogSetState(() => priority = 3),
+                        showCheckmark: true,
+                      ),
+                      _PriorityColorButton(
+                        color: Colors.red,
+                        isSelected: priority == 4,
+                        onTap: () => dialogSetState(() => priority = 4),
+                        showCheckmark: true,
+                      ),
+                    ],
                   ),
-                  _PriorityColorButton(
-                    color: Colors.yellow,
-                    isSelected: priority == 2,
-                    onTap: () => setState(() => priority = 2),
-                    showCheckmark: true,
-                  ),
-                  _PriorityColorButton(
-                    color: Colors.orange,
-                    isSelected: priority == 3,
-                    onTap: () => setState(() => priority = 3),
-                    showCheckmark: true,
-                  ),
-                  _PriorityColorButton(
-                    color: Colors.red,
-                    isSelected: priority == 4,
-                    onTap: () => setState(() => priority = 4),
-                    showCheckmark: true,
+                  const SizedBox(height: 16),
+                  TextField(
+                    controller: goalController,
+                    decoration: InputDecoration(
+                      labelText: '学习目标（每行一条，以回车键分隔）',
+                      labelStyle: const TextStyle(color: Colors.white60),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8),
+                        borderSide: const BorderSide(color: Color(0xFF3A3A5A)),
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8),
+                        borderSide: const BorderSide(
+                          color: Color(0xFF42A5F5),
+                          width: 2,
+                        ),
+                      ),
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 10,
+                      ),
+                    ),
+                    minLines: 3,
+                    maxLines: 6,
+                    style: const TextStyle(color: Colors.white),
+                    cursorColor: const Color(0xFF42A5F5),
                   ),
                 ],
               ),
-              const SizedBox(height: 16),
-              TextField(
-                controller: goalController,
-                decoration: InputDecoration(
-                  labelText: '学习目标（每行一条，以回车键分隔）',
-                  labelStyle: const TextStyle(color: Colors.white60),
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(8),
-                    borderSide: const BorderSide(color: Color(0xFF3A3A5A)),
-                  ),
-                  focusedBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(8),
-                    borderSide: const BorderSide(
-                      color: Color(0xFF42A5F5),
-                      width: 2,
-                    ),
-                  ),
-                  contentPadding: const EdgeInsets.symmetric(
-                    horizontal: 12,
-                    vertical: 10,
-                  ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text(
+                  '取消',
+                  style: TextStyle(color: Colors.redAccent),
                 ),
-                minLines: 3,
-                maxLines: 6,
-                style: const TextStyle(color: Colors.white),
-                cursorColor: const Color(0xFF42A5F5),
+              ),
+              TextButton(
+                onPressed: () {
+                  final name = nameController.text.trim();
+                  if (name.isEmpty) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('学科名称不能为空'),
+                        backgroundColor: Colors.redAccent,
+                      ),
+                    );
+                    return;
+                  }
+                  if (_subjects.any((s) => s.name == name)) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('该学科已存在'),
+                        backgroundColor: Colors.redAccent,
+                      ),
+                    );
+                    return;
+                  }
+                  final goals = goalController.text
+                      .split('\n')
+                      .map((g) => g.trim())
+                      .where((g) => g.isNotEmpty)
+                      .toList();
+                  final subject = Subject(
+                    name: name,
+                    priority: priority,
+                    goals: goals,
+                  );
+                  setState(() {
+                    _subjects.add(subject);
+                    _saveSubjects();
+                  });
+                  Navigator.pop(context);
+                },
+                child: const Text(
+                  '确认',
+                  style: TextStyle(color: Color(0xFF42A5F5)),
+                ),
               ),
             ],
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('取消', style: TextStyle(color: Colors.redAccent)),
-          ),
-          TextButton(
-            onPressed: () {
-              final name = nameController.text.trim();
-              if (name.isEmpty) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('学科名称不能为空'),
-                    backgroundColor: Colors.redAccent,
-                  ),
-                );
-                return;
-              }
-              if (_subjects.any((s) => s.name == name)) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('该学科已存在'),
-                    backgroundColor: Colors.redAccent,
-                  ),
-                );
-                return;
-              }
-              final goals = goalController.text
-                  .split('\n')
-                  .map((g) => g.trim())
-                  .where((g) => g.isNotEmpty)
-                  .toList();
-              final subject = Subject(
-                name: name,
-                priority: priority,
-                goals: goals,
-              );
-              setState(() {
-                _subjects.add(subject);
-                _saveSubjects();
-              });
-              Navigator.pop(context);
-            },
-            child: const Text('确认', style: TextStyle(color: Color(0xFF42A5F5))),
-          ),
-        ],
+          );
+        },
       ),
     );
   }
 
-  // 选择学科
+  // 编辑学科（齿轮对话框），包含删除按钮与删除确认
+  void _editSubject(Subject subject) {
+    final TextEditingController nameController = TextEditingController(
+      text: subject.name,
+    );
+    final TextEditingController goalController = TextEditingController(
+      text: subject.goals.join('\n'),
+    );
+    int priority = subject.priority;
+
+    showDialog(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, dialogSetState) {
+          return AlertDialog(
+            backgroundColor: const Color(0xFF24243E),
+            title: const Text('编辑学科', style: TextStyle(color: Colors.white)),
+            content: SizedBox(
+              width: 400,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  TextField(
+                    controller: nameController,
+                    decoration: InputDecoration(
+                      labelText: '学科名称',
+                      labelStyle: const TextStyle(color: Colors.white60),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8),
+                        borderSide: const BorderSide(color: Color(0xFF3A3A5A)),
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8),
+                        borderSide: const BorderSide(
+                          color: Color(0xFF42A5F5),
+                          width: 2,
+                        ),
+                      ),
+                    ),
+                    style: const TextStyle(color: Colors.white),
+                    cursorColor: const Color(0xFF42A5F5),
+                  ),
+                  const SizedBox(height: 16),
+                  const Text('重要度', style: TextStyle(color: Colors.white70)),
+                  const SizedBox(height: 8),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                    children: [
+                      _PriorityColorButton(
+                        color: Colors.blue,
+                        isSelected: priority == 0,
+                        onTap: () => dialogSetState(() => priority = 0),
+                        showCheckmark: true,
+                      ),
+                      _PriorityColorButton(
+                        color: Colors.green,
+                        isSelected: priority == 1,
+                        onTap: () => dialogSetState(() => priority = 1),
+                        showCheckmark: true,
+                      ),
+                      _PriorityColorButton(
+                        color: Colors.yellow,
+                        isSelected: priority == 2,
+                        onTap: () => dialogSetState(() => priority = 2),
+                        showCheckmark: true,
+                      ),
+                      _PriorityColorButton(
+                        color: Colors.orange,
+                        isSelected: priority == 3,
+                        onTap: () => dialogSetState(() => priority = 3),
+                        showCheckmark: true,
+                      ),
+                      _PriorityColorButton(
+                        color: Colors.red,
+                        isSelected: priority == 4,
+                        onTap: () => dialogSetState(() => priority = 4),
+                        showCheckmark: true,
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+                  TextField(
+                    controller: goalController,
+                    decoration: InputDecoration(
+                      labelText: '学习目标（每行一条，以回车键分隔）',
+                      labelStyle: const TextStyle(color: Colors.white60),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8),
+                        borderSide: const BorderSide(color: Color(0xFF3A3A5A)),
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8),
+                        borderSide: const BorderSide(
+                          color: Color(0xFF42A5F5),
+                          width: 2,
+                        ),
+                      ),
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 10,
+                      ),
+                    ),
+                    minLines: 3,
+                    maxLines: 6,
+                    style: const TextStyle(color: Colors.white),
+                    cursorColor: const Color(0xFF42A5F5),
+                  ),
+                ],
+              ),
+            ),
+            actions: [
+              // 删除按钮（左侧）
+              TextButton(
+                onPressed: () async {
+                  // show delete confirmation
+                  final confirmed = await showDialog<bool>(
+                    context: context,
+                    builder: (context) => AlertDialog(
+                      backgroundColor: const Color(0xFF24243E),
+                      title: const Text(
+                        '删除学科',
+                        style: TextStyle(color: Colors.white),
+                      ),
+                      content: const Text(
+                        '该学科将从列表移除，但您的学习日志和学习时长将保存，您可以通过timechecker进行查看统计，是否确认删除？',
+                        style: TextStyle(color: Colors.white70),
+                      ),
+                      actions: [
+                        TextButton(
+                          onPressed: () => Navigator.pop(context, false),
+                          child: const Text(
+                            '取消',
+                            style: TextStyle(color: Colors.white70),
+                          ),
+                        ),
+                        TextButton(
+                          onPressed: () => Navigator.pop(context, true),
+                          child: const Text(
+                            '确认',
+                            style: TextStyle(color: Colors.redAccent),
+                          ),
+                        ),
+                      ],
+                    ),
+                  );
+                  if (confirmed ?? false) {
+                    // perform deletion
+                    setState(() {
+                      _subjects.removeWhere((s) => s.name == subject.name);
+                      _expandedSubjects.remove(subject.name);
+                      if (_currentSubject?.name == subject.name) {
+                        _currentSubject = null;
+                      }
+                      _saveSubjects();
+                    });
+                    Navigator.pop(context); // close edit dialog
+                  }
+                },
+                child: const Text(
+                  '删除',
+                  style: TextStyle(color: Colors.redAccent),
+                ),
+              ),
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text(
+                  '取消',
+                  style: TextStyle(color: Colors.white70),
+                ),
+              ),
+              TextButton(
+                onPressed: () {
+                  final name = nameController.text.trim();
+                  if (name.isEmpty) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('学科名称不能为空'),
+                        backgroundColor: Colors.redAccent,
+                      ),
+                    );
+                    return;
+                  }
+                  // check for duplicate name (excluding self)
+                  if (_subjects.any(
+                    (s) => s.name == name && s.name != subject.name,
+                  )) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('已存在同名学科'),
+                        backgroundColor: Colors.redAccent,
+                      ),
+                    );
+                    return;
+                  }
+                  final goals = goalController.text
+                      .split('\n')
+                      .map((g) => g.trim())
+                      .where((g) => g.isNotEmpty)
+                      .toList();
+                  final updated = Subject(
+                    name: name,
+                    priority: priority,
+                    goals: goals,
+                  );
+                  setState(() {
+                    final index = _subjects.indexWhere(
+                      (s) => s.name == subject.name,
+                    );
+                    if (index != -1) {
+                      _subjects[index] = updated;
+                      // 保证当前选中学科引用也是更新的实例
+                      if (_currentSubject?.name == subject.name) {
+                        _currentSubject = updated;
+                      }
+                      // 若学科 name 修改，则调整 expanded 集合：移除旧名，展开用新名
+                      if (name != subject.name) {
+                        if (_expandedSubjects.remove(subject.name)) {
+                          _expandedSubjects.add(name);
+                        }
+                      }
+                      _saveSubjects();
+                    }
+                  });
+                  Navigator.pop(context);
+                },
+                child: const Text(
+                  '确认',
+                  style: TextStyle(color: Color(0xFF42A5F5)),
+                ),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
+  // 选择学科（不影响展开多个）
   void _selectSubject(Subject subject) {
     setState(() {
       _currentSubject = subject;
-      _isSubjectDetailExpanded = false;
     });
   }
 
-  // 展开/收起学科详情
+  // 展开/收起学科详情（支持多个同时展开）
   void _toggleSubjectDetail(Subject subject) {
     setState(() {
-      _isSubjectDetailExpanded = _isSubjectDetailExpanded ? false : true;
-      if (_isSubjectDetailExpanded) {
+      if (_expandedSubjects.contains(subject.name)) {
+        _expandedSubjects.remove(subject.name);
+      } else {
+        _expandedSubjects.add(subject.name);
+      }
+      // 保持 currentSubject 指向当前展开的 subject（如果是展开）
+      if (_expandedSubjects.contains(subject.name)) {
         _currentSubject = subject;
       } else {
-        _currentSubject = null;
+        if (_currentSubject?.name == subject.name) _currentSubject = null;
       }
     });
   }
 
-  // 修改学科重要度 - 强化反馈
+  // 修改学科重要度，同时更新当前学科引用（如果匹配）
   void _updatePriority(Subject subject, int priority) {
-    setState(() {
-      final index = _subjects.indexOf(subject);
-      if (index != -1) {
-        _subjects[index] = Subject(
-          name: subject.name,
-          priority: priority,
-          goals: subject.goals,
-        );
+    final index = _subjects.indexWhere((s) => s.name == subject.name);
+    if (index != -1) {
+      final updated = Subject(
+        name: subject.name,
+        priority: priority,
+        goals: subject.goals,
+      );
+      setState(() {
+        _subjects[index] = updated;
         _saveSubjects();
-        // 重要度修改反馈
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('${subject.name} 重要度已更新'),
-            backgroundColor: Theme.of(context).colorScheme.primary,
-            duration: const Duration(milliseconds: 800),
-          ),
-        );
-      }
-    });
+        if (_currentSubject?.name == subject.name) {
+          _currentSubject = updated;
+        }
+      });
+    }
   }
 
   @override
   void dispose() {
-    _timer.cancel();
+    _timer?.cancel();
     _noteController.dispose();
     _breathController.dispose();
     _audioPlayer.dispose();
+    _customMinutesController?.dispose();
     super.dispose();
+  }
+
+  Color _priorityColorByIndex(int idx) {
+    switch (idx) {
+      case 0:
+        return Colors.blue;
+      case 1:
+        return Colors.green;
+      case 2:
+        return Colors.yellow;
+      case 3:
+        return Colors.orange;
+      case 4:
+        return Colors.red;
+      default:
+        return Colors.blue;
+    }
   }
 
   @override
   Widget build(BuildContext context) {
+    // 计算左侧面板宽度，避免重复命名参数错误
+    final double leftPanelWidth = _expandedSubjects.isNotEmpty
+        ? 320
+        : (_isSettingsExpanded ? 320 : 60);
+
     return Scaffold(
       appBar: AppBar(
         title: const Text('学习钟'),
@@ -892,21 +1169,22 @@ class _StudyClockPageState extends State<StudyClockPage>
       ),
       body: Row(
         children: [
-          // 左侧折叠栏 - 修复交互逻辑和样式
+          // 左侧折叠栏 - 支持多展开 & 齿轮编辑
           AnimatedContainer(
             duration: const Duration(milliseconds: 300),
-            width: _isSubjectsPanelExpanded ? 320 : 60, // 展开宽度增加，占比更高
+            width: leftPanelWidth,
             color: const Color(0xFF1A1A2E),
             child: Column(
               children: [
                 const SizedBox(height: 20),
-                // 折叠状态：仅显示半透明箭头
-                if (!_isSubjectsPanelExpanded)
+                if (!_expandedSubjects.any((_) => true) &&
+                    !_subjectsPanelForcedOpen())
                   Expanded(
                     child: Center(
                       child: GestureDetector(
-                        onTap: () =>
-                            setState(() => _isSubjectsPanelExpanded = true),
+                        onTap: () => setState(
+                          () => _expandedSubjects.clear() /* trigger open */,
+                        ),
                         child: Container(
                           width: 40,
                           height: 40,
@@ -924,7 +1202,6 @@ class _StudyClockPageState extends State<StudyClockPage>
                     ),
                   )
                 else
-                  // 展开状态：显示学科列表
                   Expanded(
                     child: Column(
                       children: [
@@ -936,9 +1213,8 @@ class _StudyClockPageState extends State<StudyClockPage>
                               Icons.arrow_back_ios,
                               color: Colors.white70,
                             ),
-                            onPressed: () => setState(
-                              () => _isSubjectsPanelExpanded = false,
-                            ),
+                            onPressed: () =>
+                                setState(() => _expandedSubjects.clear()),
                           ),
                         ),
                         // 学科列表
@@ -969,27 +1245,29 @@ class _StudyClockPageState extends State<StudyClockPage>
                                   itemCount: _subjects.length,
                                   itemBuilder: (context, index) {
                                     final subject = _subjects[index];
-                                    // 重要度对应颜色
+                                    // 重要度对应颜色（轻透明用于背景）
                                     final priorityColors = [
-                                      Colors.blue.withOpacity(0.2),
-                                      Colors.green.withOpacity(0.2),
-                                      Colors.yellow.withOpacity(0.2),
-                                      Colors.orange.withOpacity(0.2),
-                                      Colors.red.withOpacity(0.2),
+                                      Colors.blue.withOpacity(0.02),
+                                      Colors.green.withOpacity(0.02),
+                                      Colors.yellow.withOpacity(0.02),
+                                      Colors.orange.withOpacity(0.02),
+                                      Colors.red.withOpacity(0.02),
                                     ];
+                                    final isExpanded = _expandedSubjects
+                                        .contains(subject.name);
                                     return Column(
                                       children: [
                                         ListTile(
-                                          // 列表项背景色实时匹配重要度
                                           tileColor:
                                               priorityColors[subject.priority],
                                           leading: IconButton(
                                             icon: const Icon(
-                                              Icons.add,
+                                              Icons.settings,
                                               color: Colors.white70,
                                               size: 18,
                                             ),
-                                            onPressed: () => _addSubject(),
+                                            onPressed: () =>
+                                                _editSubject(subject),
                                             padding: EdgeInsets.zero,
                                             constraints: const BoxConstraints(),
                                           ),
@@ -1003,26 +1281,25 @@ class _StudyClockPageState extends State<StudyClockPage>
                                           trailing: Row(
                                             mainAxisSize: MainAxisSize.min,
                                             children: [
-                                              _PriorityColorButton(
-                                                color: [
-                                                  Colors.blue,
-                                                  Colors.green,
-                                                  Colors.yellow,
-                                                  Colors.orange,
-                                                  Colors.red,
-                                                ][subject.priority],
-                                                isSelected: true,
-                                                onTap: () {},
-                                                size: 18,
-                                                showCheckmark:
-                                                    false, // 列表中不显示对勾
+                                              // 单独做一个小圆点作为该学科的 priority 标识（会根据 subject.priority 更新）
+                                              Container(
+                                                width: 14,
+                                                height: 14,
+                                                decoration: BoxDecoration(
+                                                  color: _priorityColorByIndex(
+                                                    subject.priority,
+                                                  ),
+                                                  shape: BoxShape.circle,
+                                                  border: Border.all(
+                                                    color: Colors.white24,
+                                                    width: 1,
+                                                  ),
+                                                ),
                                               ),
                                               const SizedBox(width: 8),
                                               IconButton(
                                                 icon: Icon(
-                                                  _isSubjectDetailExpanded &&
-                                                          _currentSubject ==
-                                                              subject
+                                                  isExpanded
                                                       ? Icons.expand_less
                                                       : Icons.expand_more,
                                                   color: Colors.white70,
@@ -1045,9 +1322,8 @@ class _StudyClockPageState extends State<StudyClockPage>
                                                 vertical: 10,
                                               ),
                                         ),
-                                        // 学科详情面板（展开时显示）
-                                        if (_isSubjectDetailExpanded &&
-                                            _currentSubject == subject)
+                                        // 学科详情面板（可同时展开多个）
+                                        if (isExpanded)
                                           Container(
                                             color: const Color(0xFF24243E),
                                             padding: const EdgeInsets.symmetric(
@@ -1213,8 +1489,8 @@ class _StudyClockPageState extends State<StudyClockPage>
                     ),
                   ),
                 const SizedBox(height: 20),
-                // 展开状态显示加号按钮
-                if (_isSubjectsPanelExpanded && _subjects.isNotEmpty)
+                // 展开状态显示加号按钮（底部FAB）
+                if (_subjects.isNotEmpty)
                   FloatingActionButton(
                     onPressed: _addSubject,
                     backgroundColor: Theme.of(context).colorScheme.primary,
@@ -1224,7 +1500,7 @@ class _StudyClockPageState extends State<StudyClockPage>
               ],
             ),
           ),
-          // 主内容区 - 修复倒计时显示溢出
+          // 主内容区 - 修复倒计时显示与备注的遮盖关系
           Expanded(
             child: Container(
               color: Theme.of(context).colorScheme.background,
@@ -1232,7 +1508,7 @@ class _StudyClockPageState extends State<StudyClockPage>
                 padding: const EdgeInsets.all(20.0),
                 child: Column(
                   children: [
-                    // 可折叠设置区域
+                    // 可折叠设置区域 (unchanged)
                     AnimatedSize(
                       duration: const Duration(milliseconds: 300),
                       child: _isSettingsExpanded
@@ -1328,24 +1604,40 @@ class _StudyClockPageState extends State<StudyClockPage>
                                       Expanded(
                                         child: SizedBox(
                                           height: 100,
-                                          child: ListWheelScrollView.useDelegate(
-                                            itemExtent: 50,
-                                            physics:
-                                                const ClampingScrollPhysics(),
-                                            controller:
-                                                FixedExtentScrollController(
-                                                  initialItem:
-                                                      _selectedCustomMinutes -
-                                                      1,
+                                          child: Stack(
+                                            children: [
+                                              Positioned(
+                                                left: 0,
+                                                right: 0,
+                                                top: 25,
+                                                height: 50,
+                                                child: Container(
+                                                  decoration: BoxDecoration(
+                                                    color: Theme.of(context)
+                                                        .colorScheme
+                                                        .primary
+                                                        .withOpacity(0.3),
+                                                    borderRadius:
+                                                        BorderRadius.circular(
+                                                          8,
+                                                        ),
+                                                  ),
                                                 ),
-                                            onSelectedItemChanged: (int index) {
-                                              setState(
-                                                () => _selectedCustomMinutes =
-                                                    index + 1,
-                                              );
-                                            },
-                                            childDelegate:
-                                                ListWheelChildBuilderDelegate(
+                                              ),
+                                              ListWheelScrollView.useDelegate(
+                                                itemExtent: 50,
+                                                physics:
+                                                    const ClampingScrollPhysics(),
+                                                controller:
+                                                    _customMinutesController,
+                                                onSelectedItemChanged: (int index) {
+                                                  setState(
+                                                    () =>
+                                                        _selectedCustomMinutes =
+                                                            index + 1,
+                                                  );
+                                                },
+                                                childDelegate: ListWheelChildBuilderDelegate(
                                                   childCount: 120,
                                                   builder: (context, index) {
                                                     final minutes = index + 1;
@@ -1375,6 +1667,8 @@ class _StudyClockPageState extends State<StudyClockPage>
                                                     );
                                                   },
                                                 ),
+                                              ),
+                                            ],
                                           ),
                                         ),
                                       ),
@@ -1614,118 +1908,153 @@ class _StudyClockPageState extends State<StudyClockPage>
                     ),
                     const SizedBox(height: 20),
 
-                    // 时间显示区域 - 修复溢出问题
+                    // 时间显示区域与备注：使用 Stack 让备注覆盖在时间上（解决覆盖层级问题）
                     Expanded(
                       flex: 3,
-                      child: AnimatedBuilder(
-                        animation: _breathController,
-                        builder: (context, child) {
-                          return Container(
-                            decoration: BoxDecoration(
-                              gradient: LinearGradient(
-                                begin: Alignment.topLeft,
-                                end: Alignment.bottomRight,
-                                colors: [
-                                  Theme.of(
-                                    context,
-                                  ).colorScheme.primary.withOpacity(0.2),
-                                  Theme.of(
-                                    context,
-                                  ).colorScheme.secondary.withOpacity(0.2),
-                                ],
-                              ),
-                              borderRadius: BorderRadius.circular(20),
-                              boxShadow: _isRunning
-                                  ? [
-                                      BoxShadow(
-                                        color: Theme.of(context)
-                                            .colorScheme
-                                            .primary
-                                            .withOpacity(
-                                              _breathController.value * 0.4,
-                                            ),
-                                        blurRadius: 25,
-                                        spreadRadius: 3,
-                                      ),
-                                    ]
-                                  : [],
-                            ),
-                            child: Center(
-                              child: Padding(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 30,
-                                ),
-                                child: LayoutBuilder(
-                                  builder: (context, constraints) {
-                                    // 根据可用宽度动态调整字体大小
-                                    double fontSize = 68;
-                                    if (constraints.maxWidth < 400) {
-                                      fontSize = 48;
-                                    } else if (constraints.maxWidth < 500) {
-                                      fontSize = 56;
-                                    }
-
-                                    return Column(
-                                      mainAxisAlignment:
-                                          MainAxisAlignment.center,
-                                      children: [
-                                        if (_currentSubject != null)
-                                          Text(
-                                            _currentSubject!.name,
-                                            style: TextStyle(
-                                              fontSize: 24,
-                                              fontWeight: FontWeight.w600,
-                                              color: Colors.white70,
-                                            ),
-                                            overflow: TextOverflow.ellipsis,
-                                          ),
-                                        const SizedBox(height: 16),
-                                        Text(
-                                          _formatTime(_seconds),
-                                          style: TextStyle(
-                                            fontSize: fontSize,
-                                            fontWeight: FontWeight.w800,
-                                            color:
-                                                _targetDurationMinutes !=
-                                                        null &&
-                                                    _seconds <= 60
-                                                ? Colors.redAccent
-                                                : Theme.of(
-                                                    context,
-                                                  ).colorScheme.primary,
-                                            letterSpacing: 2,
-                                          ),
-                                          overflow: TextOverflow.visible,
-                                        ),
+                      child: Stack(
+                        clipBehavior: Clip.none,
+                        children: [
+                          // 时间容器（底层）
+                          Positioned.fill(
+                            child: AnimatedBuilder(
+                              animation: _breathController,
+                              builder: (context, child) {
+                                return Container(
+                                  decoration: BoxDecoration(
+                                    gradient: LinearGradient(
+                                      begin: Alignment.topLeft,
+                                      end: Alignment.bottomRight,
+                                      colors: [
+                                        Theme.of(
+                                          context,
+                                        ).colorScheme.primary.withOpacity(0.2),
+                                        Theme.of(context).colorScheme.secondary
+                                            .withOpacity(0.2),
                                       ],
-                                    );
-                                  },
+                                    ),
+                                    borderRadius: BorderRadius.circular(20),
+                                    boxShadow: _isRunning
+                                        ? [
+                                            BoxShadow(
+                                              color: Theme.of(context)
+                                                  .colorScheme
+                                                  .primary
+                                                  .withOpacity(
+                                                    _breathController.value *
+                                                        0.4,
+                                                  ),
+                                              blurRadius: 25,
+                                              spreadRadius: 3,
+                                            ),
+                                          ]
+                                        : [],
+                                  ),
+                                  child: Center(
+                                    child: Padding(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 30,
+                                      ),
+                                      child: LayoutBuilder(
+                                        builder: (context, constraints) {
+                                          // 根据可用宽度动态调整字体大小
+                                          double fontSize = 68;
+                                          if (constraints.maxWidth < 400) {
+                                            fontSize = 48;
+                                          } else if (constraints.maxWidth <
+                                              500) {
+                                            fontSize = 56;
+                                          }
+
+                                          return Column(
+                                            mainAxisAlignment:
+                                                MainAxisAlignment.center,
+                                            children: [
+                                              if (_currentSubject != null)
+                                                Text(
+                                                  _currentSubject!.name,
+                                                  style: TextStyle(
+                                                    fontSize: 24,
+                                                    fontWeight: FontWeight.w600,
+                                                    color: Colors.white70,
+                                                  ),
+                                                  overflow:
+                                                      TextOverflow.ellipsis,
+                                                ),
+                                              const SizedBox(height: 16),
+                                              Text(
+                                                _formatTime(_seconds),
+                                                style: TextStyle(
+                                                  fontSize: fontSize,
+                                                  fontWeight: FontWeight.w800,
+                                                  color:
+                                                      _targetDurationMinutes !=
+                                                              null &&
+                                                          _seconds <= 60
+                                                      ? Colors.redAccent
+                                                      : Theme.of(
+                                                          context,
+                                                        ).colorScheme.primary,
+                                                  letterSpacing: 2,
+                                                ),
+                                                overflow: TextOverflow.ellipsis,
+                                              ),
+                                            ],
+                                          );
+                                        },
+                                      ),
+                                    ),
+                                  ),
+                                );
+                              },
+                            ),
+                          ),
+
+                          // 备注输入（覆盖在时间之上）: 放在底部
+                          Positioned(
+                            left: 12,
+                            right: 12,
+                            bottom: -28, // 部分覆盖到时间容器（让它看起来在上层）
+                            child: Material(
+                              color: Colors.transparent,
+                              child: Container(
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFF24243E),
+                                  borderRadius: BorderRadius.circular(8),
+                                  border: Border.all(
+                                    color: const Color(0xFF3A3A5A),
+                                  ),
+                                ),
+                                child: TextField(
+                                  controller: _noteController,
+                                  decoration: InputDecoration(
+                                    contentPadding: const EdgeInsets.symmetric(
+                                      horizontal: 12,
+                                      vertical: 14,
+                                    ),
+                                    prefixIcon: const Icon(
+                                      Icons.note_add_outlined,
+                                      color: Colors.white60,
+                                    ),
+                                    hintText: '例如：数学刷题、英语背诵...',
+                                    hintStyle: const TextStyle(
+                                      color: Colors.white54,
+                                    ),
+                                    border: InputBorder.none,
+                                  ),
+                                  enabled: !_isRunning,
+                                  style: const TextStyle(
+                                    fontSize: 16,
+                                    color: Colors.white,
+                                  ),
+                                  cursorColor: const Color(0xFF42A5F5),
                                 ),
                               ),
                             ),
-                          );
-                        },
+                          ),
+                        ],
                       ),
                     ),
-                    const SizedBox(height: 20),
-
-                    // 备注输入
-                    TextField(
-                      controller: _noteController,
-                      decoration: InputDecoration(
-                        labelText: '添加备注（可选）',
-                        hintText: '例如：数学刷题、英语背诵...',
-                        prefixIcon: const Icon(
-                          Icons.note_add_outlined,
-                          color: Colors.white60,
-                        ),
-                      ),
-                      enabled: !_isRunning,
-                      style: const TextStyle(fontSize: 16, color: Colors.white),
-                      cursorColor: const Color(0xFF42A5F5),
-                    ),
-                    const SizedBox(height: 20),
-
+                    const SizedBox(height: 50), // 给覆叠出的备注预留空间
                     // 控制按钮
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceEvenly,
@@ -1891,6 +2220,12 @@ class _StudyClockPageState extends State<StudyClockPage>
       ),
     );
   }
+
+  // helper to decide initial left panel open state (keeps previous behavior if desired)
+  bool _subjectsPanelForcedOpen() {
+    // In previous code the panel was controlled by _isSubjectsPanelExpanded; we replicate a simple heuristic:
+    return _subjects.isNotEmpty;
+  }
 }
 
 class _DurationButton extends StatelessWidget {
@@ -1976,6 +2311,31 @@ class _PriorityColorButtonState extends State<_PriorityColorButton>
             curve: Curves.easeInOut,
           ),
         );
+  }
+
+  @override
+  void didUpdateWidget(covariant _PriorityColorButton oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // 当 color 改变时，重建 color tween 以匹配新颜色
+    if (oldWidget.color != widget.color) {
+      _colorAnimation =
+          ColorTween(
+            begin: widget.color,
+            end: HSLColor.fromColor(widget.color)
+                .withLightness(
+                  (HSLColor.fromColor(widget.color).lightness + 0.3).clamp(
+                    0.0,
+                    1.0,
+                  ),
+                )
+                .toColor(),
+          ).animate(
+            CurvedAnimation(
+              parent: _animationController,
+              curve: Curves.easeInOut,
+            ),
+          );
+    }
   }
 
   @override
