@@ -195,11 +195,35 @@ class _StudyClockPageState extends State<StudyClockPage>
   }
 
   Future<void> _initFiles() async {
-    final dir = await getApplicationDocumentsDirectory();
-    _logFile = File('${dir.path}/StudyClockLogs.txt');
-    _subjectsFile = File('${dir.path}/StudyClockSubjects.json');
-    _subjectStatsFile = File('${dir.path}/StudyClockSubjectStats.json');
+    // 获取系统 Documents 目录
+    Directory documentsDir;
+    if (Platform.isWindows) {
+      // Windows 系统：Documents/studyclock
+      String? userProfile = Platform.environment['USERPROFILE'];
+      if (userProfile != null) {
+        documentsDir = Directory('$userProfile/Documents/studyclock');
+      } else {
+        //  fallback：使用默认应用文档目录
+        documentsDir = await getApplicationDocumentsDirectory();
+        documentsDir = Directory('${documentsDir.path}/studyclock');
+      }
+    } else {
+      // 其他平台：保持原逻辑（应用文档目录/studyclock）
+      documentsDir = await getApplicationDocumentsDirectory();
+      documentsDir = Directory('${documentsDir.path}/studyclock');
+    }
 
+    // 确保文件夹存在（不存在则创建，存在则忽略）
+    await documentsDir.create(recursive: true);
+
+    // 初始化文件路径
+    _logFile = File('${documentsDir.path}/StudyClockLogs.txt');
+    _subjectsFile = File('${documentsDir.path}/StudyClockSubjects.json');
+    _subjectStatsFile = File(
+      '${documentsDir.path}/StudyClockSubjectsStats.json',
+    );
+
+    // 以下为原逻辑（读取文件内容），保持不变
     if (await _logFile.exists()) {
       final content = await _logFile.readAsString();
       if (content.isNotEmpty) {
