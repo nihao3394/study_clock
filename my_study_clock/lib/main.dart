@@ -1,7 +1,4 @@
 // Complete corrected main.dart
-// Fixed previous syntax/definition issues (notably uses PriorityColorButton instead of _PriorityColorButton
-// and consistent widget/class naming). This file is self-contained and should compile (Dart null-safe).
-//
 // Dependencies (pubspec.yaml):
 //   path_provider: ^2.0.0
 //   audioplayers: ^1.0.0
@@ -193,10 +190,11 @@ class _StudyClockPageState extends State<StudyClockPage>
       try {
         final raw = await _subjectsFile.readAsString();
         final data = json.decode(raw);
-        if (data is List)
+        if (data is List) {
           _subjects = data
               .map((e) => Subject.fromJson(e as Map<String, dynamic>))
               .toList();
+        }
       } catch (_) {}
     }
 
@@ -265,10 +263,11 @@ class _StudyClockPageState extends State<StudyClockPage>
         setState(() => _isPlayingPreview = true);
       }
     } catch (e) {
-      if (mounted)
+      if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('铃声预览失败：$e'), backgroundColor: Colors.red),
         );
+      }
     }
   }
 
@@ -293,13 +292,14 @@ class _StudyClockPageState extends State<StudyClockPage>
         _selectedRingtonePath = null;
       });
       await _preloadRingtone();
-      if (mounted)
+      if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: const Text('自定义铃声已选中'),
             backgroundColor: Theme.of(context).colorScheme.primary,
           ),
         );
+      }
     }
   }
 
@@ -333,13 +333,14 @@ class _StudyClockPageState extends State<StudyClockPage>
       _targetDurationMinutes = minutes;
       _seconds = minutes * 60;
     });
-    if (mounted)
+    if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text('已选择 ${minutes}分钟学习时长'),
           backgroundColor: Theme.of(context).colorScheme.primary,
         ),
       );
+    }
   }
 
   void _confirmCustomDuration() {
@@ -347,13 +348,14 @@ class _StudyClockPageState extends State<StudyClockPage>
       _targetDurationMinutes = _selectedCustomMinutes;
       _seconds = _selectedCustomMinutes * 60;
     });
-    if (mounted)
+    if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text('已选择自定义 ${_selectedCustomMinutes}分钟学习时长'),
           backgroundColor: Theme.of(context).colorScheme.primary,
         ),
       );
+    }
   }
 
   void _cancelDurationSelection() {
@@ -462,11 +464,12 @@ class _StudyClockPageState extends State<StudyClockPage>
                 final log =
                     '$timeNow | 目标时长：${_formatTime((_targetDurationMinutes ?? 0) * 60)} | 实际学习时长：$actualDuration$subjectText | 备注：$note';
 
-                if (_currentSubject != null)
+                if (_currentSubject != null) {
                   _updateSubjectTotalDuration(
                     _currentSubject!.name,
                     actualDurationSeconds,
                   );
+                }
 
                 setState(() {
                   _studyLogs.add(log);
@@ -500,13 +503,14 @@ class _StudyClockPageState extends State<StudyClockPage>
     _pauseTimer();
     if (_timerStartTime == null ||
         (DateTime.now().difference(_timerStartTime!).inSeconds < 1)) {
-      if (mounted)
+      if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: const Text('未检测到有效学习时长 ❌'),
             backgroundColor: Colors.red,
           ),
         );
+      }
       return;
     }
     final actualDurationSeconds = DateTime.now()
@@ -523,8 +527,9 @@ class _StudyClockPageState extends State<StudyClockPage>
     final log =
         '$timeNow | 目标时长：$targetText | 实际学习时长：$actualDuration$subjectText | 备注：${_noteController.text.isEmpty ? '无' : _noteController.text}';
 
-    if (_currentSubject != null)
+    if (_currentSubject != null) {
       _updateSubjectTotalDuration(_currentSubject!.name, actualDurationSeconds);
+    }
 
     setState(() {
       _studyLogs.add(log);
@@ -536,23 +541,25 @@ class _StudyClockPageState extends State<StudyClockPage>
     });
 
     _saveLogToFile(log);
-    if (mounted)
+    if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: const Text('日志已保存 ✅'),
           backgroundColor: Theme.of(context).colorScheme.secondary,
         ),
       );
+    }
   }
 
   void _updateSubjectTotalDuration(String name, int addSeconds) {
     final idx = _subjectStats.indexWhere((s) => s.subjectName == name);
-    if (idx != -1)
+    if (idx != -1) {
       _subjectStats[idx].totalSeconds += addSeconds;
-    else
+    } else {
       _subjectStats.add(
         SubjectStat(subjectName: name, totalSeconds: addSeconds),
       );
+    }
     _saveSubjectStats();
   }
 
@@ -661,23 +668,25 @@ class _StudyClockPageState extends State<StudyClockPage>
                 onPressed: () {
                   final name = nameController.text.trim();
                   if (name.isEmpty) {
-                    if (mounted)
+                    if (mounted) {
                       ScaffoldMessenger.of(context).showSnackBar(
                         const SnackBar(
                           content: Text('学科名称不能为空'),
                           backgroundColor: Colors.red,
                         ),
                       );
+                    }
                     return;
                   }
                   if (_subjects.any((s) => s.name == name)) {
-                    if (mounted)
+                    if (mounted) {
                       ScaffoldMessenger.of(context).showSnackBar(
                         const SnackBar(
                           content: Text('该学科已存在'),
                           backgroundColor: Colors.red,
                         ),
                       );
+                    }
                     return;
                   }
                   final goals = goalsController.text
@@ -796,25 +805,27 @@ class _StudyClockPageState extends State<StudyClockPage>
                 onPressed: () {
                   final name = nameController.text.trim();
                   if (name.isEmpty) {
-                    if (mounted)
+                    if (mounted) {
                       ScaffoldMessenger.of(context).showSnackBar(
                         const SnackBar(
                           content: Text('学科名称不能为空'),
                           backgroundColor: Colors.red,
                         ),
                       );
+                    }
                     return;
                   }
                   if (_subjects.any(
                     (s) => s.name == name && s.name != subject.name,
                   )) {
-                    if (mounted)
+                    if (mounted) {
                       ScaffoldMessenger.of(context).showSnackBar(
                         const SnackBar(
                           content: Text('已存在同名学科'),
                           backgroundColor: Colors.red,
                         ),
                       );
+                    }
                     return;
                   }
                   final goals = goalsController.text
@@ -936,10 +947,8 @@ class _StudyClockPageState extends State<StudyClockPage>
       ),
       body: Row(
         children: [
-          // Sidebar
-          AnimatedContainer(
-            duration: _panelAnimDuration,
-            curve: _panelAnimCurve,
+          // Sidebar - instant toggle (no slow collapse animation)
+          Container(
             width: leftPanelWidth,
             color: const Color(0xFF1A1A2E),
             child: Column(
@@ -970,318 +979,9 @@ class _StudyClockPageState extends State<StudyClockPage>
                   const SizedBox(height: 44),
                 const SizedBox(height: 4),
                 Expanded(
-                  child: AnimatedSwitcher(
-                    duration: _panelAnimDuration,
-                    switchInCurve: _panelAnimCurve,
-                    switchOutCurve: _panelAnimCurve,
-                    child: _isSidebarExpanded
-                        ? Column(
-                            key: const ValueKey('expanded_sidebar'),
-                            children: [
-                              Expanded(
-                                child: _subjects.isEmpty
-                                    ? Column(
-                                        mainAxisAlignment:
-                                            MainAxisAlignment.center,
-                                        children: [
-                                          const Text(
-                                            '当前还没有添加学科，点击加号试试吧~',
-                                            style: TextStyle(
-                                              color: Colors.white54,
-                                            ),
-                                          ),
-                                          const SizedBox(height: 16),
-                                          FloatingActionButton(
-                                            onPressed: _addSubject,
-                                            backgroundColor: Theme.of(
-                                              context,
-                                            ).colorScheme.primary,
-                                            child: const Icon(Icons.add),
-                                          ),
-                                        ],
-                                      )
-                                    : ListView.builder(
-                                        itemCount: _subjects.length,
-                                        itemBuilder: (ctx, i) {
-                                          final subj = _subjects[i];
-                                          final isExpanded = _expandedSubjects
-                                              .contains(subj.name);
-                                          return Column(
-                                            children: [
-                                              ListTile(
-                                                leading: IconButton(
-                                                  icon: const Icon(
-                                                    Icons.settings,
-                                                    color: Colors.white70,
-                                                    size: 18,
-                                                  ),
-                                                  onPressed: () =>
-                                                      _editSubject(subj),
-                                                  padding: EdgeInsets.zero,
-                                                  constraints:
-                                                      const BoxConstraints(),
-                                                ),
-                                                title: Text(
-                                                  subj.name,
-                                                  style: const TextStyle(
-                                                    color: Colors.white,
-                                                  ),
-                                                ),
-                                                trailing: Row(
-                                                  mainAxisSize:
-                                                      MainAxisSize.min,
-                                                  children: [
-                                                    Container(
-                                                      width: 14,
-                                                      height: 14,
-                                                      decoration: BoxDecoration(
-                                                        color:
-                                                            _priorityColorByIndex(
-                                                              subj.priority,
-                                                            ),
-                                                        shape: BoxShape.circle,
-                                                        border: Border.all(
-                                                          color: Colors.white24,
-                                                        ),
-                                                      ),
-                                                    ),
-                                                    const SizedBox(width: 8),
-                                                    IconButton(
-                                                      icon: Icon(
-                                                        isExpanded
-                                                            ? Icons.expand_less
-                                                            : Icons.expand_more,
-                                                        color: Colors.white70,
-                                                      ),
-                                                      onPressed: () =>
-                                                          _toggleSubjectDetail(
-                                                            subj,
-                                                          ),
-                                                      padding: EdgeInsets.zero,
-                                                      constraints:
-                                                          const BoxConstraints(),
-                                                    ),
-                                                  ],
-                                                ),
-                                                onTap: () =>
-                                                    _selectSubject(subj),
-                                              ),
-                                              AnimatedCrossFade(
-                                                firstChild:
-                                                    const SizedBox.shrink(),
-                                                secondChild: Container(
-                                                  color: const Color(
-                                                    0xFF24243E,
-                                                  ),
-                                                  padding:
-                                                      const EdgeInsets.symmetric(
-                                                        horizontal: 12,
-                                                        vertical: 12,
-                                                      ),
-                                                  child: Column(
-                                                    crossAxisAlignment:
-                                                        CrossAxisAlignment
-                                                            .start,
-                                                    children: [
-                                                      const Text(
-                                                        '重要度',
-                                                        style: TextStyle(
-                                                          color: Colors.white70,
-                                                        ),
-                                                      ),
-                                                      const SizedBox(height: 8),
-                                                      Row(
-                                                        mainAxisAlignment:
-                                                            MainAxisAlignment
-                                                                .spaceEvenly,
-                                                        children: [
-                                                          PriorityColorButton(
-                                                            color: Colors.blue,
-                                                            isSelected:
-                                                                subj.priority ==
-                                                                0,
-                                                            onTap: () =>
-                                                                _updatePriority(
-                                                                  subj,
-                                                                  0,
-                                                                ),
-                                                          ),
-                                                          PriorityColorButton(
-                                                            color: Colors.green,
-                                                            isSelected:
-                                                                subj.priority ==
-                                                                1,
-                                                            onTap: () =>
-                                                                _updatePriority(
-                                                                  subj,
-                                                                  1,
-                                                                ),
-                                                          ),
-                                                          PriorityColorButton(
-                                                            color:
-                                                                Colors.yellow,
-                                                            isSelected:
-                                                                subj.priority ==
-                                                                2,
-                                                            onTap: () =>
-                                                                _updatePriority(
-                                                                  subj,
-                                                                  2,
-                                                                ),
-                                                          ),
-                                                          PriorityColorButton(
-                                                            color:
-                                                                Colors.orange,
-                                                            isSelected:
-                                                                subj.priority ==
-                                                                3,
-                                                            onTap: () =>
-                                                                _updatePriority(
-                                                                  subj,
-                                                                  3,
-                                                                ),
-                                                          ),
-                                                          PriorityColorButton(
-                                                            color: Colors.red,
-                                                            isSelected:
-                                                                subj.priority ==
-                                                                4,
-                                                            onTap: () =>
-                                                                _updatePriority(
-                                                                  subj,
-                                                                  4,
-                                                                ),
-                                                          ),
-                                                        ],
-                                                      ),
-                                                      const SizedBox(height: 8),
-                                                      const Text(
-                                                        '学习目标',
-                                                        style: TextStyle(
-                                                          color: Colors.white70,
-                                                        ),
-                                                      ),
-                                                      const SizedBox(height: 8),
-                                                      if (subj.goals.isEmpty)
-                                                        const Text(
-                                                          '暂无目标',
-                                                          style: TextStyle(
-                                                            color:
-                                                                Colors.white54,
-                                                          ),
-                                                        )
-                                                      else
-                                                        Column(
-                                                          children: subj.goals
-                                                              .map(
-                                                                (g) => Padding(
-                                                                  padding:
-                                                                      const EdgeInsets.symmetric(
-                                                                        vertical:
-                                                                            2,
-                                                                      ),
-                                                                  child: Row(
-                                                                    children: [
-                                                                      const Text(
-                                                                        '• ',
-                                                                        style: TextStyle(
-                                                                          color:
-                                                                              Colors.white70,
-                                                                        ),
-                                                                      ),
-                                                                      Flexible(
-                                                                        child: Text(
-                                                                          g,
-                                                                          style: const TextStyle(
-                                                                            color:
-                                                                                Colors.white,
-                                                                          ),
-                                                                        ),
-                                                                      ),
-                                                                    ],
-                                                                  ),
-                                                                ),
-                                                              )
-                                                              .toList(),
-                                                        ),
-                                                      const SizedBox(height: 8),
-                                                      const Text(
-                                                        '累计学习时长',
-                                                        style: TextStyle(
-                                                          color: Colors.white70,
-                                                        ),
-                                                      ),
-                                                      const SizedBox(height: 6),
-                                                      Text(
-                                                        _getSubjectTotalDuration(
-                                                          subj.name,
-                                                        ),
-                                                        style: const TextStyle(
-                                                          color: Colors.white,
-                                                        ),
-                                                      ),
-                                                    ],
-                                                  ),
-                                                ),
-                                                crossFadeState: isExpanded
-                                                    ? CrossFadeState.showSecond
-                                                    : CrossFadeState.showFirst,
-                                                duration: _panelAnimDuration,
-                                              ),
-                                              const Divider(
-                                                color: Colors.white10,
-                                                height: 1,
-                                              ),
-                                            ],
-                                          );
-                                        },
-                                      ),
-                              ),
-                              Padding(
-                                padding: const EdgeInsets.symmetric(
-                                  vertical: 12.0,
-                                ),
-                                child: FloatingActionButton(
-                                  onPressed: _addSubject,
-                                  backgroundColor: Theme.of(
-                                    context,
-                                  ).colorScheme.primary,
-                                  child: const Icon(Icons.add),
-                                ),
-                              ),
-                            ],
-                          )
-                        : Column(
-                            key: const ValueKey('collapsed_sidebar'),
-                            children: [
-                              const SizedBox(height: 6),
-                              Expanded(
-                                child: Center(
-                                  child: IconButton(
-                                    icon: const Icon(
-                                      Icons.chevron_right,
-                                      color: Colors.white70,
-                                      size: 28,
-                                    ),
-                                    onPressed: () => setState(
-                                      () => _isSidebarExpanded = true,
-                                    ),
-                                  ),
-                                ),
-                              ),
-                              Padding(
-                                padding: const EdgeInsets.only(bottom: 12.0),
-                                child: FloatingActionButton(
-                                  onPressed: _addSubject,
-                                  backgroundColor: Theme.of(
-                                    context,
-                                  ).colorScheme.primary,
-                                  child: const Icon(Icons.add),
-                                ),
-                              ),
-                            ],
-                          ),
-                  ),
+                  child: _isSidebarExpanded
+                      ? _buildExpandedSidebarContent()
+                      : _buildCollapsedSidebarContent(),
                 ),
                 const SizedBox(height: 8),
               ],
@@ -1296,7 +996,7 @@ class _StudyClockPageState extends State<StudyClockPage>
                 padding: const EdgeInsets.all(20.0),
                 child: Column(
                   children: [
-                    // Settings
+                    // Settings - animated in main area (keeps existing AnimatedSize)
                     AnimatedSize(
                       duration: _panelAnimDuration,
                       curve: _panelAnimCurve,
@@ -1428,6 +1128,224 @@ class _StudyClockPageState extends State<StudyClockPage>
     );
   }
 
+  // Sidebar content widgets (instant, no animation)
+  Widget _buildExpandedSidebarContent() {
+    return Column(
+      children: [
+        Expanded(
+          child: _subjects.isEmpty
+              ? Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    const Text(
+                      '当前还没有添加学科，点击加号试试吧~',
+                      style: TextStyle(color: Colors.white54),
+                    ),
+                    const SizedBox(height: 16),
+                    FloatingActionButton(
+                      onPressed: _addSubject,
+                      backgroundColor: Theme.of(context).colorScheme.primary,
+                      child: const Icon(Icons.add),
+                    ),
+                  ],
+                )
+              : ListView.builder(
+                  itemCount: _subjects.length,
+                  itemBuilder: (ctx, i) {
+                    final subj = _subjects[i];
+                    final isExpanded = _expandedSubjects.contains(subj.name);
+                    return Column(
+                      children: [
+                        ListTile(
+                          leading: IconButton(
+                            icon: const Icon(
+                              Icons.settings,
+                              color: Colors.white70,
+                              size: 18,
+                            ),
+                            onPressed: () => _editSubject(subj),
+                            padding: EdgeInsets.zero,
+                            constraints: const BoxConstraints(),
+                          ),
+                          title: Text(
+                            subj.name,
+                            style: const TextStyle(color: Colors.white),
+                          ),
+                          trailing: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Container(
+                                width: 14,
+                                height: 14,
+                                decoration: BoxDecoration(
+                                  color: _priorityColorByIndex(subj.priority),
+                                  shape: BoxShape.circle,
+                                  border: Border.all(color: Colors.white24),
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              IconButton(
+                                icon: Icon(
+                                  isExpanded
+                                      ? Icons.expand_less
+                                      : Icons.expand_more,
+                                  color: Colors.white70,
+                                ),
+                                onPressed: () => _toggleSubjectDetail(subj),
+                                padding: EdgeInsets.zero,
+                                constraints: const BoxConstraints(),
+                              ),
+                            ],
+                          ),
+                          onTap: () => _selectSubject(subj),
+                        ),
+                        // Instant show/hide details (no animation)
+                        if (isExpanded)
+                          Container(
+                            color: const Color(0xFF24243E),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 12,
+                              vertical: 12,
+                            ),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Text(
+                                  '重要度',
+                                  style: TextStyle(color: Colors.white70),
+                                ),
+                                const SizedBox(height: 8),
+                                Row(
+                                  mainAxisAlignment:
+                                      MainAxisAlignment.spaceEvenly,
+                                  children: [
+                                    PriorityColorButton(
+                                      color: Colors.blue,
+                                      isSelected: subj.priority == 0,
+                                      onTap: () => _updatePriority(subj, 0),
+                                    ),
+                                    PriorityColorButton(
+                                      color: Colors.green,
+                                      isSelected: subj.priority == 1,
+                                      onTap: () => _updatePriority(subj, 1),
+                                    ),
+                                    PriorityColorButton(
+                                      color: Colors.yellow,
+                                      isSelected: subj.priority == 2,
+                                      onTap: () => _updatePriority(subj, 2),
+                                    ),
+                                    PriorityColorButton(
+                                      color: Colors.orange,
+                                      isSelected: subj.priority == 3,
+                                      onTap: () => _updatePriority(subj, 3),
+                                    ),
+                                    PriorityColorButton(
+                                      color: Colors.red,
+                                      isSelected: subj.priority == 4,
+                                      onTap: () => _updatePriority(subj, 4),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 8),
+                                const Text(
+                                  '学习目标',
+                                  style: TextStyle(color: Colors.white70),
+                                ),
+                                const SizedBox(height: 8),
+                                if (subj.goals.isEmpty)
+                                  const Text(
+                                    '暂无目标',
+                                    style: TextStyle(color: Colors.white54),
+                                  )
+                                else
+                                  Column(
+                                    children: subj.goals
+                                        .map(
+                                          (g) => Padding(
+                                            padding: const EdgeInsets.symmetric(
+                                              vertical: 2,
+                                            ),
+                                            child: Row(
+                                              children: [
+                                                const Text(
+                                                  '• ',
+                                                  style: TextStyle(
+                                                    color: Colors.white70,
+                                                  ),
+                                                ),
+                                                Flexible(
+                                                  child: Text(
+                                                    g,
+                                                    style: const TextStyle(
+                                                      color: Colors.white,
+                                                    ),
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                          ),
+                                        )
+                                        .toList(),
+                                  ),
+                                const SizedBox(height: 8),
+                                const Text(
+                                  '累计学习时长',
+                                  style: TextStyle(color: Colors.white70),
+                                ),
+                                const SizedBox(height: 6),
+                                Text(
+                                  _getSubjectTotalDuration(subj.name),
+                                  style: const TextStyle(color: Colors.white),
+                                ),
+                              ],
+                            ),
+                          ),
+                        const Divider(color: Colors.white10, height: 1),
+                      ],
+                    );
+                  },
+                ),
+        ),
+        Padding(
+          padding: const EdgeInsets.symmetric(vertical: 12.0),
+          child: FloatingActionButton(
+            onPressed: _addSubject,
+            backgroundColor: Theme.of(context).colorScheme.primary,
+            child: const Icon(Icons.add),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildCollapsedSidebarContent() {
+    return Column(
+      children: [
+        const SizedBox(height: 6),
+        Expanded(
+          child: Center(
+            child: IconButton(
+              icon: const Icon(
+                Icons.chevron_right,
+                color: Colors.white70,
+                size: 28,
+              ),
+              onPressed: () => setState(() => _isSidebarExpanded = true),
+            ),
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.only(bottom: 12.0),
+          child: FloatingActionButton(
+            onPressed: _addSubject,
+            backgroundColor: Theme.of(context).colorScheme.primary,
+            child: const Icon(Icons.add),
+          ),
+        ),
+      ],
+    );
+  }
+
   Widget _buildSettingsPanel() {
     return Container(
       padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 20),
@@ -1540,6 +1458,7 @@ class _StudyClockPageState extends State<StudyClockPage>
                 onPressed: _confirmCustomDuration,
                 style: ElevatedButton.styleFrom(
                   backgroundColor: Theme.of(context).colorScheme.primary,
+                  foregroundColor: Colors.white,
                 ),
                 child: const Text('确认'),
               ),
@@ -1564,15 +1483,20 @@ class _StudyClockPageState extends State<StudyClockPage>
                   backgroundColor: _enableRingtone
                       ? Theme.of(context).colorScheme.secondary
                       : Colors.grey,
+                  foregroundColor: Colors.white,
                 ),
                 child: Row(
                   children: [
                     Icon(
                       _isPlayingPreview ? Icons.pause : Icons.play_arrow,
                       size: 16,
+                      color: Colors.white,
                     ),
                     const SizedBox(width: 6),
-                    Text(_isPlayingPreview ? '暂停' : '预览'),
+                    Text(
+                      _isPlayingPreview ? '暂停' : '预览',
+                      style: const TextStyle(color: Colors.white),
+                    ),
                   ],
                 ),
               ),
@@ -1622,12 +1546,13 @@ class _StudyClockPageState extends State<StudyClockPage>
                 onPressed: _selectCustomRingtone,
                 style: ElevatedButton.styleFrom(
                   backgroundColor: const Color(0xFF3A3A5A),
+                  foregroundColor: Colors.white,
                 ),
                 child: const Row(
                   children: [
-                    Icon(Icons.file_open, size: 16),
+                    Icon(Icons.file_open, size: 16, color: Colors.white),
                     SizedBox(width: 6),
-                    Text('本地'),
+                    Text('本地', style: TextStyle(color: Colors.white)),
                   ],
                 ),
               ),
@@ -1776,6 +1701,7 @@ class _StudyClockPageState extends State<StudyClockPage>
                       },
                       style: ElevatedButton.styleFrom(
                         backgroundColor: const Color(0xFF3979E0),
+                        foregroundColor: Colors.white,
                       ),
                       child: const Row(
                         children: [
@@ -1789,6 +1715,7 @@ class _StudyClockPageState extends State<StudyClockPage>
                       onPressed: _pauseTimer,
                       style: ElevatedButton.styleFrom(
                         backgroundColor: const Color(0xFFF57C00),
+                        foregroundColor: Colors.white,
                       ),
                       child: const Row(
                         children: [
@@ -1802,6 +1729,7 @@ class _StudyClockPageState extends State<StudyClockPage>
                       onPressed: _endTimer,
                       style: ElevatedButton.styleFrom(
                         backgroundColor: const Color(0xFF4CAF50),
+                        foregroundColor: Colors.white,
                       ),
                       child: const Row(
                         children: [
@@ -1904,6 +1832,7 @@ class _StudyClockPageState extends State<StudyClockPage>
           onPressed: _startTimer,
           style: ElevatedButton.styleFrom(
             backgroundColor: const Color(0xFF3979E0),
+            foregroundColor: Colors.white,
           ),
           child: const Row(
             children: [Icon(Icons.play_arrow), SizedBox(width: 8), Text('开始')],
@@ -1913,6 +1842,7 @@ class _StudyClockPageState extends State<StudyClockPage>
           onPressed: _pauseTimer,
           style: ElevatedButton.styleFrom(
             backgroundColor: const Color(0xFFF57C00),
+            foregroundColor: Colors.white,
           ),
           child: const Row(
             children: [Icon(Icons.pause), SizedBox(width: 8), Text('暂停')],
@@ -1922,6 +1852,7 @@ class _StudyClockPageState extends State<StudyClockPage>
           onPressed: _endTimer,
           style: ElevatedButton.styleFrom(
             backgroundColor: const Color(0xFF4CAF50),
+            foregroundColor: Colors.white,
           ),
           child: const Row(
             children: [Icon(Icons.check), SizedBox(width: 8), Text('结束记录')],
@@ -1953,10 +1884,11 @@ class _DurationButton extends StatelessWidget {
         backgroundColor: isSelected
             ? Theme.of(context).colorScheme.primary
             : const Color(0xFF3A3A5A),
+        foregroundColor: Colors.white,
         padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
       ),
-      child: Text('$minutes 分钟'),
+      child: Text('$minutes 分钟', style: const TextStyle(color: Colors.white)),
     );
   }
 }
