@@ -883,19 +883,25 @@ class _StudyClockPageState extends State<StudyClockPage>
     );
   }
 
-  void _selectSubject(Subject subject) =>
+  void _selectSubject(Subject subject) {
+    // 再次点击已选中的科目，取消选中
+    if (_currentSubject?.name == subject.name) {
+      setState(() => _currentSubject = null);
+    } else {
       setState(() => _currentSubject = subject);
+    }
+  }
 
   void _toggleSubjectDetail(Subject subj) {
     setState(() {
-      if (_expandedSubjects.contains(subj.name))
+      if (_expandedSubjects.contains(subj.name)) {
         _expandedSubjects.remove(subj.name);
-      else
+        // 收起时如果当前选中的是该科目，保持选中状态（不自动取消）
+      } else {
         _expandedSubjects.add(subj.name);
-      if (_expandedSubjects.contains(subj.name))
+        // 展开时自动选中该科目
         _currentSubject = subj;
-      else if (_currentSubject?.name == subj.name)
-        _currentSubject = null;
+      }
     });
   }
 
@@ -915,11 +921,13 @@ class _StudyClockPageState extends State<StudyClockPage>
     }
   }
 
+  // 优化数字显示区高度逻辑：设置展开时大幅压缩，收起时显示完整高度
   double _timerHeight(BuildContext c) {
-    final h = MediaQuery.of(c).size.height;
-    final normal = h * 0.36;
-    final shrunk = normal * 0.56;
-    return _isSettingsExpanded ? shrunk : normal;
+    final screenHeight = MediaQuery.of(c).size.height;
+    // 收起时：占屏幕高度36%（完整显示）
+    final fullHeight = screenHeight * 0.36;
+    // 展开时：压缩到120px（仅显示顶部部分，完全符合需求）
+    return _isSettingsExpanded ? 120.0 : fullHeight;
   }
 
   @override
@@ -976,7 +984,7 @@ class _StudyClockPageState extends State<StudyClockPage>
       ),
       body: Row(
         children: [
-          // Sidebar - smooth width animation driven by controller
+          // 侧边栏部分（完全不变，保留原有逻辑）
           AnimatedBuilder(
             animation: _sidebarController,
             builder: (ctx, child) {
@@ -986,7 +994,6 @@ class _StudyClockPageState extends State<StudyClockPage>
                 _sidebarExpandedWidth,
                 t,
               )!;
-              // opacity & blur for content: when collapsed (t->0) content should be blurred and transparent
               final contentOpacity = t.clamp(0.0, 1.0);
               final blurSigma = (1.0 - t) * _sidebarMaxBlur;
               final showFullHeader = t > 0.45;
@@ -999,7 +1006,6 @@ class _StudyClockPageState extends State<StudyClockPage>
                   child: Column(
                     children: [
                       const SizedBox(height: 12),
-                      // Header: show full title when expanded visual, otherwise show empty area to match spacing
                       if (showFullHeader)
                         Row(
                           children: [
@@ -1026,11 +1032,9 @@ class _StudyClockPageState extends State<StudyClockPage>
                       else
                         const SizedBox(height: 44),
                       const SizedBox(height: 4),
-
-                      // IMPORTANT: when visually collapsed we must render the collapsed buttons without opacity/blur
                       Expanded(
                         child: isCollapsedVisual
-                            ? _buildCollapsedSidebarContent() // render collapsed controls plainly so icons are visible
+                            ? _buildCollapsedSidebarContent()
                             : ClipRect(
                                 child: Opacity(
                                   opacity: contentOpacity,
@@ -1054,7 +1058,7 @@ class _StudyClockPageState extends State<StudyClockPage>
             },
           ),
 
-          // Main area
+          // 主内容区域（核心简化：用Column线性布局，不做Stack叠加）
           Expanded(
             child: Container(
               color: Theme.of(context).colorScheme.background,
@@ -1062,7 +1066,7 @@ class _StudyClockPageState extends State<StudyClockPage>
                 padding: const EdgeInsets.all(20.0),
                 child: Column(
                   children: [
-                    // Settings - animated in main area (keeps AnimatedSize)
+                    // 1. 设置面板（展开/折叠动画保留）
                     AnimatedSize(
                       duration: _panelAnimDuration,
                       curve: _panelAnimCurve,
@@ -1071,24 +1075,21 @@ class _StudyClockPageState extends State<StudyClockPage>
                           : _buildSettingsCollapsed(),
                     ),
 
-                    const SizedBox(height: 12),
+                    const SizedBox(height: 15), // 固定间距，不影响布局流
+                    // 2. 数字显示区（高度随设置页状态动态变化，压缩时显示不全）
+                    _buildTimerNormal(context),
 
-                    // Timer area with conditional overlay behavior
-                    if (_isSettingsExpanded) ...[
-                      _buildTimerWithOverlay(context),
-                      const SizedBox(height: 60),
-                    ] else ...[
-                      _buildTimerNormal(context),
-                      const SizedBox(height: 12),
-                      _buildNoteInputNormal(), // uses the refined floating outline TextField
-                      const SizedBox(height: 18),
-                      _buildControlsNormal(),
-                      const SizedBox(height: 12),
-                    ],
+                    const SizedBox(height: 15), // 数字区与备注框间距
+                    // 3. 备注输入框（始终在布局流中，不叠加）
+                    _buildNoteInputNormal(),
 
-                    // Logs
+                    const SizedBox(height: 15), // 备注框与按钮间距
+                    // 4. 控制按钮（始终在布局流中，不叠加）
+                    _buildControlsNormal(),
+
+                    const SizedBox(height: 30), // 按钮与日志区间距
+                    // 5. 学习日志（固定在底部，占剩余空间）
                     Expanded(
-                      flex: 2,
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
@@ -1658,47 +1659,68 @@ class _StudyClockPageState extends State<StudyClockPage>
     );
   }
 
-  Widget _buildTimerWithOverlay(BuildContext context) {
-    return AnimatedContainer(
-      duration: _panelAnimDuration,
-      curve: _panelAnimCurve,
-      height: _timerHeight(context),
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [
-            Theme.of(context).colorScheme.primary.withOpacity(0.18),
-            Theme.of(context).colorScheme.secondary.withOpacity(0.12),
-          ],
-        ),
-        borderRadius: BorderRadius.circular(16),
-      ),
-      child: Stack(
-        clipBehavior: Clip.none,
-        children: [
-          Positioned.fill(
-            child: Center(
-              child: LayoutBuilder(
-                builder: (ctx, cons) {
-                  var fontSize = cons.maxWidth < 400
-                      ? 48.0
-                      : (cons.maxWidth < 600 ? 64.0 : 84.0);
-                  fontSize *= 0.92;
-                  return Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      if (_currentSubject != null)
-                        Text(
-                          _currentSubject!.name,
-                          style: const TextStyle(
-                            color: Colors.white70,
-                            fontSize: 20,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      const SizedBox(height: 12),
-                      Text(
+  // 数字显示区（优化内容对齐，确保压缩时顶部可见，默认居中）
+  Widget _buildTimerNormal(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _breathController,
+      builder: (context, child) {
+        return AnimatedContainer(
+          duration: _panelAnimDuration,
+          curve: _panelAnimCurve,
+          height: _timerHeight(context),
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [
+                Theme.of(context).colorScheme.primary.withOpacity(0.2),
+                Theme.of(context).colorScheme.secondary.withOpacity(0.2),
+              ],
+            ),
+            borderRadius: BorderRadius.circular(20),
+            boxShadow: _isRunning
+                ? [
+                    BoxShadow(
+                      color: Theme.of(context).colorScheme.primary.withOpacity(
+                        _breathController.value * 0.4,
+                      ),
+                      blurRadius: 25,
+                      spreadRadius: 3,
+                    ),
+                  ]
+                : [],
+          ),
+          child: Align(
+            alignment: _isSettingsExpanded
+                ? Alignment.topCenter
+                : Alignment.center, // 展开时靠上，收起时居中
+            child: Padding(
+              padding: _isSettingsExpanded
+                  ? const EdgeInsets.only(top: 20) // 展开时顶部内边距
+                  : EdgeInsets.zero, // 收起时无内边距，完全居中
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  // 学科名称（始终显示在顶部）
+                  if (_currentSubject != null)
+                    Text(
+                      _currentSubject!.name,
+                      style: const TextStyle(
+                        color: Colors.white70,
+                        fontSize: 20,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  const SizedBox(height: 10),
+                  // 时间数字（默认居中，压缩时可能被截断，完全可接受）
+                  LayoutBuilder(
+                    builder: (ctx, cons) {
+                      var fontSize = _isSettingsExpanded
+                          ? 48.0 // 展开时缩小字体，尽量显示完整
+                          : (cons.maxWidth < 400
+                                ? 48.0
+                                : (cons.maxWidth < 600 ? 64.0 : 84.0));
+                      return Text(
                         _formatTime(_seconds),
                         style: TextStyle(
                           fontSize: fontSize,
@@ -1707,227 +1729,63 @@ class _StudyClockPageState extends State<StudyClockPage>
                               _targetDurationMinutes != null && _seconds <= 60
                               ? Colors.redAccent
                               : Theme.of(context).colorScheme.primary,
+                          letterSpacing: 4,
                         ),
-                      ),
-                    ],
-                  );
-                },
+                      );
+                    },
+                  ),
+                ],
               ),
             ),
           ),
-          Positioned(
-            left: 12,
-            right: 12,
-            bottom: -40,
-            child: Column(
-              children: [
-                // 增加垂直高度的带浮动标签轮廓输入框（保持原有所有动效）
-                Material(
-                  color: Colors.transparent,
-                  child: TextField(
-                    focusNode: _noteFocusNode,
-                    controller: _noteController,
-                    decoration: InputDecoration(
-                      labelText: '添加备注（可选）',
-                      hintText: '例如：数学刷题、英语背诵...',
-                      prefixIcon: const Icon(
-                        Icons.note_add_outlined,
-                        color: Colors.white60,
-                      ),
-                      isDense: false, // 关键：取消紧凑模式，允许更大高度
-                      contentPadding: const EdgeInsets.symmetric(
-                        horizontal: 16,
-                        vertical: 22, // 增加垂直内边距，提升输入框高度
-                      ),
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(8),
-                        borderSide: BorderSide(color: Colors.white12),
-                      ),
-                      enabledBorder: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(8),
-                        borderSide: BorderSide(color: Colors.white12),
-                      ),
-                      focusedBorder: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(8),
-                        borderSide: BorderSide(
-                          color: Theme.of(context).colorScheme.primary,
-                          width: 2,
-                        ),
-                      ),
-                      floatingLabelBehavior: FloatingLabelBehavior.auto,
-                      labelStyle: TextStyle(
-                        color: _noteFocusNode.hasFocus
-                            ? Theme.of(context).colorScheme.primary
-                            : Colors.white60,
-                        fontSize: 14,
-                      ),
-                      hintStyle: const TextStyle(
-                        color: Colors.white38,
-                        fontSize: 13,
-                      ),
-                    ),
-                    enabled: !_isRunning,
-                    style: const TextStyle(fontSize: 14, color: Colors.white),
-                    cursorColor: Theme.of(context).colorScheme.primary,
-                  ),
-                ),
-                const SizedBox(height: 40),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                  children: [
-                    ElevatedButton(
-                      onPressed: () {
-                        // ensure settings collapse and then start
-                        setState(() => _isSettingsExpanded = false);
-                        _startTimer();
-                      },
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFF3979E0),
-                        foregroundColor: Colors.white,
-                      ),
-                      child: const Row(
-                        children: [
-                          Icon(Icons.play_arrow),
-                          SizedBox(width: 8),
-                          Text('开始'),
-                        ],
-                      ),
-                    ),
-                    ElevatedButton(
-                      onPressed: _pauseTimer,
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFFF57C00),
-                        foregroundColor: Colors.white,
-                      ),
-                      child: const Row(
-                        children: [
-                          Icon(Icons.pause),
-                          SizedBox(width: 8),
-                          Text('暂停'),
-                        ],
-                      ),
-                    ),
-                    ElevatedButton(
-                      onPressed: _endTimer,
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFF4CAF50),
-                        foregroundColor: Colors.white,
-                      ),
-                      child: const Row(
-                        children: [
-                          Icon(Icons.check),
-                          SizedBox(width: 8),
-                          Text('结束记录'),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
+        );
+      },
     );
   }
 
-  Widget _buildTimerNormal(BuildContext context) {
-    return AnimatedContainer(
-      duration: _panelAnimDuration,
-      curve: _panelAnimCurve,
-      height: _timerHeight(context),
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [
-            Theme.of(context).colorScheme.primary.withOpacity(0.18),
-            Theme.of(context).colorScheme.secondary.withOpacity(0.12),
-          ],
-        ),
-        borderRadius: BorderRadius.circular(16),
-      ),
-      child: Center(
-        child: LayoutBuilder(
-          builder: (ctx, cons) {
-            var fontSize = cons.maxWidth < 400
-                ? 48.0
-                : (cons.maxWidth < 600 ? 64.0 : 84.0);
-            return Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                if (_currentSubject != null)
-                  Text(
-                    _currentSubject!.name,
-                    style: const TextStyle(
-                      color: Colors.white70,
-                      fontSize: 20,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                const SizedBox(height: 12),
-                Text(
-                  _formatTime(_seconds),
-                  style: TextStyle(
-                    fontSize: fontSize,
-                    fontWeight: FontWeight.w800,
-                    color: _targetDurationMinutes != null && _seconds <= 60
-                        ? Colors.redAccent
-                        : Theme.of(context).colorScheme.primary,
-                  ),
-                ),
-              ],
-            );
-          },
-        ),
-      ),
-    );
-  }
-
+  // 备注输入框（简化样式，保持在布局流中）
   Widget _buildNoteInputNormal() {
-    // 增加垂直高度的单行带浮动标签轮廓输入框，保持原有所有动效
-    return TextField(
-      focusNode: _noteFocusNode,
-      controller: _noteController,
-      decoration: InputDecoration(
-        labelText: '添加备注（可选）',
-        hintText: '例如：数学刷题、英语背诵...',
-        prefixIcon: const Icon(Icons.note_add_outlined, color: Colors.white60),
-        isDense: false, // 关键：取消紧凑模式，允许更大高度
-        contentPadding: const EdgeInsets.symmetric(
-          horizontal: 16,
-          vertical: 20, // 增加垂直内边距，提升输入框高度
-        ),
-        border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(8),
-          borderSide: BorderSide(color: Colors.white12),
-        ),
-        enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(8),
-          borderSide: BorderSide(color: Colors.white12),
-        ),
-        focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(8),
-          borderSide: BorderSide(
-            color: Theme.of(context).colorScheme.primary,
-            width: 2,
+    return Container(
+      width: double.infinity,
+      child: TextField(
+        focusNode: _noteFocusNode,
+        controller: _noteController,
+        decoration: InputDecoration(
+          labelText: '添加备注（可选）',
+          hintText: '例如：数学刷题、英语背诵...',
+          prefixIcon: const Icon(
+            Icons.note_add_outlined,
+            color: Colors.white60,
           ),
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(10),
+            borderSide: const BorderSide(color: Color(0xFF3A3A5A)),
+          ),
+          focusedBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(10),
+            borderSide: const BorderSide(color: Color(0xFF42A5F5), width: 2),
+          ),
+          contentPadding: const EdgeInsets.symmetric(
+            horizontal: 16,
+            vertical: 14,
+          ),
+          labelStyle: TextStyle(
+            color: _noteFocusNode.hasFocus
+                ? Theme.of(context).colorScheme.primary
+                : Colors.white60,
+          ),
+          hintStyle: const TextStyle(color: Colors.white54),
+          fillColor: const Color(0xFF24243E),
+          filled: true,
         ),
-        floatingLabelBehavior: FloatingLabelBehavior.auto,
-        labelStyle: TextStyle(
-          color: _noteFocusNode.hasFocus
-              ? Theme.of(context).colorScheme.primary
-              : Colors.white60,
-          fontSize: 13,
-        ),
-        hintStyle: const TextStyle(color: Colors.white38, fontSize: 13),
+        enabled: !_isRunning,
+        style: const TextStyle(fontSize: 16, color: Colors.white),
+        cursorColor: const Color(0xFF42A5F5),
       ),
-      enabled: !_isRunning,
-      style: const TextStyle(fontSize: 14, color: Colors.white),
-      cursorColor: Theme.of(context).colorScheme.primary,
     );
   }
 
+  // 控制按钮（简化容器，保持在布局流中）
   Widget _buildControlsNormal() {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceEvenly,
@@ -1937,6 +1795,14 @@ class _StudyClockPageState extends State<StudyClockPage>
           style: ElevatedButton.styleFrom(
             backgroundColor: const Color(0xFF3979E0),
             foregroundColor: Colors.white,
+            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(10),
+            ),
+            textStyle: const TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.w500,
+            ),
           ),
           child: const Row(
             children: [Icon(Icons.play_arrow), SizedBox(width: 8), Text('开始')],
@@ -1947,6 +1813,14 @@ class _StudyClockPageState extends State<StudyClockPage>
           style: ElevatedButton.styleFrom(
             backgroundColor: const Color(0xFFF57C00),
             foregroundColor: Colors.white,
+            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(10),
+            ),
+            textStyle: const TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.w500,
+            ),
           ),
           child: const Row(
             children: [Icon(Icons.pause), SizedBox(width: 8), Text('暂停')],
@@ -1957,6 +1831,14 @@ class _StudyClockPageState extends State<StudyClockPage>
           style: ElevatedButton.styleFrom(
             backgroundColor: const Color(0xFF4CAF50),
             foregroundColor: Colors.white,
+            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(10),
+            ),
+            textStyle: const TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.w500,
+            ),
           ),
           child: const Row(
             children: [Icon(Icons.check), SizedBox(width: 8), Text('结束记录')],
