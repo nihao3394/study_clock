@@ -1075,11 +1075,11 @@ class _StudyClockPageState extends State<StudyClockPage>
                           : _buildSettingsCollapsed(),
                     ),
 
-                    const SizedBox(height: 15), // 固定间距，不影响布局流
+                    const SizedBox(height: 12), // 固定间距，不影响布局流
                     // 2. 数字显示区（高度随设置页状态动态变化，压缩时显示不全）
                     _buildTimerNormal(context),
 
-                    const SizedBox(height: 15), // 数字区与备注框间距
+                    const SizedBox(height: 13), // 数字区与备注框间距
                     // 3. 备注输入框（始终在布局流中，不叠加）
                     _buildNoteInputNormal(),
 
@@ -1087,7 +1087,7 @@ class _StudyClockPageState extends State<StudyClockPage>
                     // 4. 控制按钮（始终在布局流中，不叠加）
                     _buildControlsNormal(),
 
-                    const SizedBox(height: 30), // 按钮与日志区间距
+                    const SizedBox(height: 18), // 按钮与日志区间距
                     // 5. 学习日志（固定在底部，占剩余空间）
                     Expanded(
                       child: Column(
