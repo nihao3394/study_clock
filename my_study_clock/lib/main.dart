@@ -1,4 +1,4 @@
-// Complete corrected main.dart
+// Complete main.dart (modified)
 // Dependencies (pubspec.yaml):
 //   path_provider: ^2.0.0
 //   audioplayers: ^1.0.0
@@ -947,8 +947,10 @@ class _StudyClockPageState extends State<StudyClockPage>
       ),
       body: Row(
         children: [
-          // Sidebar - instant toggle (no slow collapse animation)
-          Container(
+          // Sidebar - now uses AnimatedContainer for smooth expand/collapse
+          AnimatedContainer(
+            duration: _panelAnimDuration,
+            curve: _panelAnimCurve,
             width: leftPanelWidth,
             color: const Color(0xFF1A1A2E),
             child: Column(
@@ -996,7 +998,7 @@ class _StudyClockPageState extends State<StudyClockPage>
                 padding: const EdgeInsets.all(20.0),
                 child: Column(
                   children: [
-                    // Settings - animated in main area (keeps existing AnimatedSize)
+                    // Settings - animated in main area (keeps AnimatedSize)
                     AnimatedSize(
                       duration: _panelAnimDuration,
                       curve: _panelAnimCurve,
@@ -1014,7 +1016,7 @@ class _StudyClockPageState extends State<StudyClockPage>
                     ] else ...[
                       _buildTimerNormal(context),
                       const SizedBox(height: 12),
-                      _buildNoteInputNormal(),
+                      _buildNoteInputNormal(), // uses the new TextField snippet
                       const SizedBox(height: 12),
                       _buildControlsNormal(),
                       const SizedBox(height: 12),
@@ -1128,7 +1130,7 @@ class _StudyClockPageState extends State<StudyClockPage>
     );
   }
 
-  // Sidebar content widgets (instant, no animation)
+  // Sidebar content widgets (expanded/collapsed)
   Widget _buildExpandedSidebarContent() {
     return Column(
       children: [
@@ -1654,43 +1656,22 @@ class _StudyClockPageState extends State<StudyClockPage>
             bottom: -36,
             child: Column(
               children: [
-                Material(
-                  color: Colors.transparent,
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 12),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF24243E),
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: const Color(0xFF3A3A5A)),
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black.withOpacity(0.25),
-                          blurRadius: 8,
-                          offset: const Offset(0, 3),
-                        ),
-                      ],
-                    ),
-                    child: TextField(
-                      controller: _noteController,
-                      decoration: const InputDecoration(
-                        contentPadding: EdgeInsets.symmetric(
-                          horizontal: 12,
-                          vertical: 14,
-                        ),
-                        prefixIcon: Icon(
-                          Icons.note_add_outlined,
-                          color: Colors.white60,
-                        ),
-                        hintText: '例如：数学刷题、英语背诵...',
-                        hintStyle: TextStyle(color: Colors.white54),
-                        border: InputBorder.none,
-                      ),
-                      enabled: !_isRunning,
-                      style: const TextStyle(color: Colors.white),
+                // 使用你提供的备注输入样式（根据 _isRunning 控制 enabled）
+                TextField(
+                  controller: _noteController,
+                  decoration: const InputDecoration(
+                    labelText: '添加备注（可选）',
+                    hintText: '例如：数学刷题、英语背诵...',
+                    prefixIcon: Icon(
+                      Icons.note_add_outlined,
+                      color: Colors.white60,
                     ),
                   ),
+                  enabled: !_isRunning,
+                  style: const TextStyle(fontSize: 16, color: Colors.white),
+                  cursorColor: const Color(0xFF42A5F5),
                 ),
-                const SizedBox(height: 10),
+                const SizedBox(height: 20),
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                   children: [
@@ -1803,23 +1784,30 @@ class _StudyClockPageState extends State<StudyClockPage>
   }
 
   Widget _buildNoteInputNormal() {
+    // 使用你提供的备注输入样式（label + hint + icon + enabled 控制）
     return Container(
       decoration: BoxDecoration(
         color: const Color(0xFF24243E),
         borderRadius: BorderRadius.circular(8),
         border: Border.all(color: const Color(0xFF3A3A5A)),
       ),
-      child: TextField(
-        controller: _noteController,
-        decoration: const InputDecoration(
-          contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 14),
-          prefixIcon: Icon(Icons.note_add_outlined, color: Colors.white60),
-          hintText: '例如：数学刷题、英语背诵...',
-          hintStyle: TextStyle(color: Colors.white54),
-          border: InputBorder.none,
-        ),
-        enabled: !_isRunning,
-        style: const TextStyle(color: Colors.white),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      child: Column(
+        children: [
+          TextField(
+            controller: _noteController,
+            decoration: const InputDecoration(
+              labelText: '添加备注（可选）',
+              hintText: '例如：数学刷题、英语背诵...',
+              prefixIcon: Icon(Icons.note_add_outlined, color: Colors.white60),
+              border: InputBorder.none,
+            ),
+            enabled: !_isRunning,
+            style: const TextStyle(fontSize: 16, color: Colors.white),
+            cursorColor: const Color(0xFF42A5F5),
+          ),
+          const SizedBox(height: 20),
+        ],
       ),
     );
   }
