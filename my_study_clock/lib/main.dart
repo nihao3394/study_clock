@@ -1885,48 +1885,55 @@ class _StudyClockPageState extends State<StudyClockPage>
   }
 
   Widget _buildNoteInputNormal() {
-    // Compact single-line outlined TextField with floating label and small height
-    // Use the same OutlineInputBorder + floating label as the overlay variant,
-    // so behavior is consistent when settings are collapsed.
-    return TextField(
-      focusNode: _noteFocusNode,
-      controller: _noteController,
-      decoration: InputDecoration(
-        labelText: '添加备注（可选）',
-        hintText: '例如：数学刷题、英语背诵...',
-        prefixIcon: const Icon(Icons.note_add_outlined, color: Colors.white60),
-        isDense: true,
-        contentPadding: const EdgeInsets.symmetric(
-          horizontal: 12,
-          vertical: 12,
-        ),
-        border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(8),
-          borderSide: BorderSide(color: Colors.white12),
-        ),
-        enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(8),
-          borderSide: BorderSide(color: Colors.white12),
-        ),
-        focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(8),
-          borderSide: BorderSide(
-            color: Theme.of(context).colorScheme.primary,
-            width: 2,
+    // 固定高度与折叠状态设置面板一致（48px），确保高度充足
+    return SizedBox(
+      height: 48,
+      child: TextField(
+        focusNode: _noteFocusNode,
+        controller: _noteController,
+        decoration: InputDecoration(
+          labelText: '添加备注（可选）',
+          hintText: '例如：数学刷题、英语背诵...',
+          prefixIcon: const Icon(
+            Icons.note_add_outlined,
+            color: Colors.white60,
           ),
+          isDense: true,
+          // 调整垂直内边距，确保文本居中
+          contentPadding: const EdgeInsets.symmetric(
+            horizontal: 12,
+            vertical: 14,
+          ),
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(8),
+            borderSide: BorderSide(color: Colors.white12),
+          ),
+          enabledBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(8),
+            borderSide: BorderSide(color: Colors.white12),
+          ),
+          focusedBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(8),
+            borderSide: BorderSide(
+              color: Theme.of(context).colorScheme.primary,
+              width: 2,
+            ),
+          ),
+          // 禁用浮动标签，避免高度变化
+          floatingLabelBehavior: FloatingLabelBehavior.never,
+          labelStyle: TextStyle(
+            color: _noteFocusNode.hasFocus
+                ? Theme.of(context).colorScheme.primary
+                : Colors.white60,
+            fontSize: 13,
+          ),
+          hintStyle: const TextStyle(color: Colors.white38, fontSize: 13),
         ),
-        floatingLabelBehavior: FloatingLabelBehavior.auto,
-        labelStyle: TextStyle(
-          color: _noteFocusNode.hasFocus
-              ? Theme.of(context).colorScheme.primary
-              : Colors.white60,
-          fontSize: 13,
-        ),
-        hintStyle: const TextStyle(color: Colors.white38, fontSize: 13),
+        enabled: !_isRunning,
+        style: const TextStyle(fontSize: 14, color: Colors.white),
+        cursorColor: Theme.of(context).colorScheme.primary,
+        textAlignVertical: TextAlignVertical.center, // 文本垂直居中
       ),
-      enabled: !_isRunning,
-      style: const TextStyle(fontSize: 14, color: Colors.white),
-      cursorColor: Theme.of(context).colorScheme.primary,
     );
   }
 
