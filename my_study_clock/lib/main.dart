@@ -664,7 +664,7 @@ class _StudyClockPageState extends State<StudyClockPage>
                   TextField(
                     controller: goalsController,
                     decoration: InputDecoration(
-                      labelText: '学习目标（回车键以分行）',
+                      labelText: '学习目标（每行一条）',
                       labelStyle: const TextStyle(color: Colors.white60),
                       border: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(8),
@@ -801,7 +801,7 @@ class _StudyClockPageState extends State<StudyClockPage>
                   TextField(
                     controller: goalsController,
                     decoration: InputDecoration(
-                      labelText: '学习目标（回车键以分行）',
+                      labelText: '学习目标（每行一条）',
                       labelStyle: const TextStyle(color: Colors.white60),
                       border: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(8),
@@ -1081,7 +1081,7 @@ class _StudyClockPageState extends State<StudyClockPage>
                       _buildTimerNormal(context),
                       const SizedBox(height: 12),
                       _buildNoteInputNormal(), // uses the refined floating outline TextField
-                      const SizedBox(height: 12),
+                      const SizedBox(height: 18),
                       _buildControlsNormal(),
                       const SizedBox(height: 12),
                     ],
@@ -1721,7 +1721,7 @@ class _StudyClockPageState extends State<StudyClockPage>
             bottom: -40,
             child: Column(
               children: [
-                // Compact outlined note input with floating label (matches requested interaction)
+                // 增加垂直高度的带浮动标签轮廓输入框（保持原有所有动效）
                 Material(
                   color: Colors.transparent,
                   child: TextField(
@@ -1734,10 +1734,10 @@ class _StudyClockPageState extends State<StudyClockPage>
                         Icons.note_add_outlined,
                         color: Colors.white60,
                       ),
-                      isDense: true,
+                      isDense: false, // 关键：取消紧凑模式，允许更大高度
                       contentPadding: const EdgeInsets.symmetric(
-                        horizontal: 12,
-                        vertical: 10,
+                        horizontal: 16,
+                        vertical: 22, // 增加垂直内边距，提升输入框高度
                       ),
                       border: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(8),
@@ -1771,7 +1771,7 @@ class _StudyClockPageState extends State<StudyClockPage>
                     cursorColor: Theme.of(context).colorScheme.primary,
                   ),
                 ),
-                const SizedBox(height: 16),
+                const SizedBox(height: 40),
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                   children: [
@@ -1885,55 +1885,46 @@ class _StudyClockPageState extends State<StudyClockPage>
   }
 
   Widget _buildNoteInputNormal() {
-    // 固定高度与折叠状态设置面板一致（48px），确保高度充足
-    return SizedBox(
-      height: 56,
-      child: TextField(
-        focusNode: _noteFocusNode,
-        controller: _noteController,
-        decoration: InputDecoration(
-          labelText: '添加备注（可选）',
-          hintText: '例如：数学刷题、英语背诵...',
-          prefixIcon: const Icon(
-            Icons.note_add_outlined,
-            color: Colors.white60,
-          ),
-          isDense: false, // 禁用紧凑模式，释放更多空间
-          // 调整垂直内边距，确保文本居中
-          contentPadding: const EdgeInsets.symmetric(
-            horizontal: 16,
-            vertical: 18,
-          ),
-          border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(8),
-            borderSide: BorderSide(color: Colors.white12),
-          ),
-          enabledBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(8),
-            borderSide: BorderSide(color: Colors.white12),
-          ),
-          focusedBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(8),
-            borderSide: BorderSide(
-              color: Theme.of(context).colorScheme.primary,
-              width: 2,
-            ),
-          ),
-          // 禁用浮动标签，避免高度变化
-          floatingLabelBehavior: FloatingLabelBehavior.never,
-          labelStyle: TextStyle(
-            color: _noteFocusNode.hasFocus
-                ? Theme.of(context).colorScheme.primary
-                : Colors.white60,
-            fontSize: 13,
-          ),
-          hintStyle: const TextStyle(color: Colors.white38, fontSize: 13),
+    // 增加垂直高度的单行带浮动标签轮廓输入框，保持原有所有动效
+    return TextField(
+      focusNode: _noteFocusNode,
+      controller: _noteController,
+      decoration: InputDecoration(
+        labelText: '添加备注（可选）',
+        hintText: '例如：数学刷题、英语背诵...',
+        prefixIcon: const Icon(Icons.note_add_outlined, color: Colors.white60),
+        isDense: false, // 关键：取消紧凑模式，允许更大高度
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: 16,
+          vertical: 20, // 增加垂直内边距，提升输入框高度
         ),
-        enabled: !_isRunning,
-        style: const TextStyle(fontSize: 14, color: Colors.white),
-        cursorColor: Theme.of(context).colorScheme.primary,
-        textAlignVertical: TextAlignVertical.center, // 文本垂直居中
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(8),
+          borderSide: BorderSide(color: Colors.white12),
+        ),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(8),
+          borderSide: BorderSide(color: Colors.white12),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(8),
+          borderSide: BorderSide(
+            color: Theme.of(context).colorScheme.primary,
+            width: 2,
+          ),
+        ),
+        floatingLabelBehavior: FloatingLabelBehavior.auto,
+        labelStyle: TextStyle(
+          color: _noteFocusNode.hasFocus
+              ? Theme.of(context).colorScheme.primary
+              : Colors.white60,
+          fontSize: 13,
+        ),
+        hintStyle: const TextStyle(color: Colors.white38, fontSize: 13),
       ),
+      enabled: !_isRunning,
+      style: const TextStyle(fontSize: 14, color: Colors.white),
+      cursorColor: Theme.of(context).colorScheme.primary,
     );
   }
 
@@ -1986,7 +1977,6 @@ class _DurationButton extends StatelessWidget {
     required this.minutes,
     required this.onTap,
     required this.isSelected,
-    super.key,
   });
 
   @override
