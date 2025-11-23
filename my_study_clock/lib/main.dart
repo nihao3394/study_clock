@@ -1,4 +1,4 @@
-// Complete main.dart (with refined note input animations and sidebar blur/fade)
+// Complete main.dart
 // Dependencies (pubspec.yaml):
 //   path_provider: ^2.0.0
 //   audioplayers: ^1.0.0
@@ -990,6 +990,7 @@ class _StudyClockPageState extends State<StudyClockPage>
               final contentOpacity = t.clamp(0.0, 1.0);
               final blurSigma = (1.0 - t) * _sidebarMaxBlur;
               final showFullHeader = t > 0.45;
+              final isCollapsedVisual = t < 0.18;
 
               return SizedBox(
                 width: width,
@@ -998,6 +999,7 @@ class _StudyClockPageState extends State<StudyClockPage>
                   child: Column(
                     children: [
                       const SizedBox(height: 12),
+                      // Header: show full title when expanded visual, otherwise show empty area to match spacing
                       if (showFullHeader)
                         Row(
                           children: [
@@ -1024,21 +1026,25 @@ class _StudyClockPageState extends State<StudyClockPage>
                       else
                         const SizedBox(height: 44),
                       const SizedBox(height: 4),
+
+                      // IMPORTANT: when visually collapsed we must render the collapsed buttons without opacity/blur
                       Expanded(
-                        child: ClipRect(
-                          child: Opacity(
-                            opacity: contentOpacity,
-                            child: ImageFiltered(
-                              imageFilter: ImageFilter.blur(
-                                sigmaX: blurSigma,
-                                sigmaY: blurSigma,
+                        child: isCollapsedVisual
+                            ? _buildCollapsedSidebarContent() // render collapsed controls plainly so icons are visible
+                            : ClipRect(
+                                child: Opacity(
+                                  opacity: contentOpacity,
+                                  child: ImageFiltered(
+                                    imageFilter: ImageFilter.blur(
+                                      sigmaX: blurSigma,
+                                      sigmaY: blurSigma,
+                                    ),
+                                    child: _isSidebarExpanded
+                                        ? _buildExpandedSidebarContent()
+                                        : _buildCollapsedSidebarContent(),
+                                  ),
+                                ),
                               ),
-                              child: _isSidebarExpanded
-                                  ? _buildExpandedSidebarContent()
-                                  : _buildCollapsedSidebarContent(),
-                            ),
-                          ),
-                        ),
                       ),
                       const SizedBox(height: 8),
                     ],
@@ -1074,7 +1080,7 @@ class _StudyClockPageState extends State<StudyClockPage>
                     ] else ...[
                       _buildTimerNormal(context),
                       const SizedBox(height: 12),
-                      _buildNoteInputNormal(),
+                      _buildNoteInputNormal(), // uses the refined floating outline TextField
                       const SizedBox(height: 12),
                       _buildControlsNormal(),
                       const SizedBox(height: 12),
@@ -1379,6 +1385,7 @@ class _StudyClockPageState extends State<StudyClockPage>
   }
 
   Widget _buildCollapsedSidebarContent() {
+    // Collapsed content must remain visible and clickable -> render plainly (no opacity/blur)
     return Column(
       children: [
         const SizedBox(height: 6),
@@ -1714,7 +1721,7 @@ class _StudyClockPageState extends State<StudyClockPage>
             bottom: -36,
             child: Column(
               children: [
-                // Compact outlined note input with floating label (matches your requested interaction)
+                // Compact outlined note input with floating label (matches requested interaction)
                 Material(
                   color: Colors.transparent,
                   child: TextField(
@@ -1879,37 +1886,47 @@ class _StudyClockPageState extends State<StudyClockPage>
 
   Widget _buildNoteInputNormal() {
     // Compact single-line outlined TextField with floating label and small height
-    return Container(
-      decoration: BoxDecoration(
-        color: const Color(0xFF24243E),
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: const Color(0xFF3A3A5A)),
-      ),
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-      child: TextField(
-        focusNode: _noteFocusNode,
-        controller: _noteController,
-        decoration: InputDecoration(
-          labelText: '添加备注（可选）',
-          hintText: '例如：数学刷题、英语背诵...',
-          prefixIcon: const Icon(
-            Icons.note_add_outlined,
-            color: Colors.white60,
-          ),
-          isDense: true,
-          contentPadding: const EdgeInsets.symmetric(
-            horizontal: 10,
-            vertical: 10,
-          ),
-          border: InputBorder.none,
-          // We wrap Outline borders by providing decoration through container border above,
-          // but to get the floating label effect with underline we use an InputDecorator-like approach:
-          // Use labelStyle and adjust behavior; we simulate focused border using FocusNode in parent.
+    // Use the same OutlineInputBorder + floating label as the overlay variant,
+    // so behavior is consistent when settings are collapsed.
+    return TextField(
+      focusNode: _noteFocusNode,
+      controller: _noteController,
+      decoration: InputDecoration(
+        labelText: '添加备注（可选）',
+        hintText: '例如：数学刷题、英语背诵...',
+        prefixIcon: const Icon(Icons.note_add_outlined, color: Colors.white60),
+        isDense: true,
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: 12,
+          vertical: 12,
         ),
-        enabled: !_isRunning,
-        style: const TextStyle(fontSize: 14, color: Colors.white),
-        cursorColor: Theme.of(context).colorScheme.primary,
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(8),
+          borderSide: BorderSide(color: Colors.white12),
+        ),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(8),
+          borderSide: BorderSide(color: Colors.white12),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(8),
+          borderSide: BorderSide(
+            color: Theme.of(context).colorScheme.primary,
+            width: 2,
+          ),
+        ),
+        floatingLabelBehavior: FloatingLabelBehavior.auto,
+        labelStyle: TextStyle(
+          color: _noteFocusNode.hasFocus
+              ? Theme.of(context).colorScheme.primary
+              : Colors.white60,
+          fontSize: 13,
+        ),
+        hintStyle: const TextStyle(color: Colors.white38, fontSize: 13),
       ),
+      enabled: !_isRunning,
+      style: const TextStyle(fontSize: 14, color: Colors.white),
+      cursorColor: Theme.of(context).colorScheme.primary,
     );
   }
 
