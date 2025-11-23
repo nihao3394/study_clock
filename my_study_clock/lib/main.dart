@@ -1681,15 +1681,10 @@ class _StudyClockPageState extends State<StudyClockPage>
             child: Center(
               child: LayoutBuilder(
                 builder: (ctx, cons) {
-                  // 动态调整字体大小，适配展开状态的容器宽度，避免数字溢出
-                  double maxFontSize = cons.maxWidth < 300
-                      ? 36.0
-                      : cons.maxWidth < 400
-                      ? 42.0
-                      : cons.maxWidth < 500
+                  var fontSize = cons.maxWidth < 400
                       ? 48.0
-                      : 56.0;
-                  maxFontSize = maxFontSize.clamp(36.0, 56.0); // 限制字体大小范围
+                      : (cons.maxWidth < 600 ? 64.0 : 84.0);
+                  fontSize *= 0.92;
                   return Column(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
@@ -1698,23 +1693,20 @@ class _StudyClockPageState extends State<StudyClockPage>
                           _currentSubject!.name,
                           style: const TextStyle(
                             color: Colors.white70,
-                            fontSize: 18,
+                            fontSize: 20,
                             fontWeight: FontWeight.w600,
                           ),
-                          overflow: TextOverflow.ellipsis,
-                          maxLines: 1,
                         ),
                       const SizedBox(height: 12),
                       Text(
                         _formatTime(_seconds),
                         style: TextStyle(
-                          fontSize: maxFontSize,
+                          fontSize: fontSize,
                           fontWeight: FontWeight.w800,
                           color:
                               _targetDurationMinutes != null && _seconds <= 60
                               ? Colors.redAccent
                               : Theme.of(context).colorScheme.primary,
-                          letterSpacing: 1.5, // 优化数字间距，避免拥挤
                         ),
                       ),
                     ],
@@ -1726,70 +1718,66 @@ class _StudyClockPageState extends State<StudyClockPage>
           Positioned(
             left: 12,
             right: 12,
-            bottom: -36,
+            bottom: -40,
             child: Column(
               children: [
-                // 优化后的备注输入框（固定高度48px，与折叠状态设置面板一致）
-                SizedBox(
-                  height: 48,
-                  child: Material(
-                    color: Colors.transparent,
-                    child: TextField(
-                      focusNode: _noteFocusNode,
-                      controller: _noteController,
-                      decoration: InputDecoration(
-                        labelText: '添加备注（可选）',
-                        hintText: '例如：数学刷题、英语背诵...',
-                        prefixIcon: const Icon(
-                          Icons.note_add_outlined,
-                          color: Colors.white60,
-                        ),
-                        isDense: true,
-                        contentPadding: const EdgeInsets.symmetric(
-                          horizontal: 12,
-                          vertical: 14, // 垂直内边距优化，确保文本居中
-                        ),
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(8),
-                          borderSide: BorderSide(color: Colors.white12),
-                        ),
-                        enabledBorder: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(8),
-                          borderSide: BorderSide(color: Colors.white12),
-                        ),
-                        focusedBorder: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(8),
-                          borderSide: BorderSide(
-                            color: Theme.of(context).colorScheme.primary,
-                            width: 2,
-                          ),
-                        ),
-                        floatingLabelBehavior:
-                            FloatingLabelBehavior.never, // 禁用浮动标签，避免高度变化
-                        labelStyle: TextStyle(
-                          color: _noteFocusNode.hasFocus
-                              ? Theme.of(context).colorScheme.primary
-                              : Colors.white60,
-                          fontSize: 13,
-                        ),
-                        hintStyle: const TextStyle(
-                          color: Colors.white38,
-                          fontSize: 13,
+                // Compact outlined note input with floating label (matches requested interaction)
+                Material(
+                  color: Colors.transparent,
+                  child: TextField(
+                    focusNode: _noteFocusNode,
+                    controller: _noteController,
+                    decoration: InputDecoration(
+                      labelText: '添加备注（可选）',
+                      hintText: '例如：数学刷题、英语背诵...',
+                      prefixIcon: const Icon(
+                        Icons.note_add_outlined,
+                        color: Colors.white60,
+                      ),
+                      isDense: true,
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 10,
+                      ),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8),
+                        borderSide: BorderSide(color: Colors.white12),
+                      ),
+                      enabledBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8),
+                        borderSide: BorderSide(color: Colors.white12),
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8),
+                        borderSide: BorderSide(
+                          color: Theme.of(context).colorScheme.primary,
+                          width: 2,
                         ),
                       ),
-                      enabled: !_isRunning,
-                      style: const TextStyle(fontSize: 14, color: Colors.white),
-                      cursorColor: Theme.of(context).colorScheme.primary,
-                      textAlignVertical: TextAlignVertical.center, // 文本垂直居中
+                      floatingLabelBehavior: FloatingLabelBehavior.auto,
+                      labelStyle: TextStyle(
+                        color: _noteFocusNode.hasFocus
+                            ? Theme.of(context).colorScheme.primary
+                            : Colors.white60,
+                        fontSize: 14,
+                      ),
+                      hintStyle: const TextStyle(
+                        color: Colors.white38,
+                        fontSize: 13,
+                      ),
                     ),
+                    enabled: !_isRunning,
+                    style: const TextStyle(fontSize: 14, color: Colors.white),
+                    cursorColor: Theme.of(context).colorScheme.primary,
                   ),
                 ),
-                const SizedBox(height: 20),
+                const SizedBox(height: 16),
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                   children: [
                     ElevatedButton(
                       onPressed: () {
+                        // ensure settings collapse and then start
                         setState(() => _isSettingsExpanded = false);
                         _startTimer();
                       },
@@ -1899,7 +1887,7 @@ class _StudyClockPageState extends State<StudyClockPage>
   Widget _buildNoteInputNormal() {
     // 固定高度与折叠状态设置面板一致（48px），确保高度充足
     return SizedBox(
-      height: 48,
+      height: 56,
       child: TextField(
         focusNode: _noteFocusNode,
         controller: _noteController,
@@ -1910,11 +1898,11 @@ class _StudyClockPageState extends State<StudyClockPage>
             Icons.note_add_outlined,
             color: Colors.white60,
           ),
-          isDense: true,
+          isDense: false, // 禁用紧凑模式，释放更多空间
           // 调整垂直内边距，确保文本居中
           contentPadding: const EdgeInsets.symmetric(
-            horizontal: 12,
-            vertical: 14,
+            horizontal: 16,
+            vertical: 18,
           ),
           border: OutlineInputBorder(
             borderRadius: BorderRadius.circular(8),
