@@ -664,7 +664,7 @@ class _StudyClockPageState extends State<StudyClockPage>
                   TextField(
                     controller: goalsController,
                     decoration: InputDecoration(
-                      labelText: '学习目标（每行一条）',
+                      labelText: '学习目标（回车键以分行）',
                       labelStyle: const TextStyle(color: Colors.white60),
                       border: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(8),
@@ -801,7 +801,7 @@ class _StudyClockPageState extends State<StudyClockPage>
                   TextField(
                     controller: goalsController,
                     decoration: InputDecoration(
-                      labelText: '学习目标（每行一条）',
+                      labelText: '学习目标（回车键以分行）',
                       labelStyle: const TextStyle(color: Colors.white60),
                       border: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(8),
