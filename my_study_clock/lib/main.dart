@@ -1,4 +1,4 @@
-// Complete main.dart (modified)
+// Complete main.dart (with refined note input animations and sidebar blur/fade)
 // Dependencies (pubspec.yaml):
 //   path_provider: ^2.0.0
 //   audioplayers: ^1.0.0
@@ -8,6 +8,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:ui';
 
 import 'package:audioplayers/audioplayers.dart';
 import 'package:file_picker/file_picker.dart';
@@ -112,6 +113,7 @@ class _StudyClockPageState extends State<StudyClockPage>
   // Logs & note
   final List<String> _studyLogs = [];
   final TextEditingController _noteController = TextEditingController();
+  final FocusNode _noteFocusNode = FocusNode();
   late File _logFile;
   late File _subjectsFile;
   late File _subjectStatsFile;
@@ -140,7 +142,9 @@ class _StudyClockPageState extends State<StudyClockPage>
   String? _customRingtoneFilePath;
 
   // Sidebar / subjects
-  bool _isSidebarExpanded = true;
+  bool _isSidebarExpanded = true; // logical state
+  late final AnimationController
+  _sidebarController; // drives smooth width & content effects
   List<Subject> _subjects = [];
   List<SubjectStat> _subjectStats = [];
   Subject? _currentSubject;
@@ -149,6 +153,11 @@ class _StudyClockPageState extends State<StudyClockPage>
   // Animation config
   static const Duration _panelAnimDuration = Duration(milliseconds: 420);
   static const Curve _panelAnimCurve = Curves.easeInOut;
+
+  // sidebar sizes and blur intensity
+  static const double _sidebarExpandedWidth = 320.0;
+  static const double _sidebarCollapsedWidth = 60.0;
+  static const double _sidebarMaxBlur = 8.0;
 
   @override
   void initState() {
@@ -171,6 +180,18 @@ class _StudyClockPageState extends State<StudyClockPage>
     });
     _initFiles();
     _preloadRingtone();
+
+    // sidebar controller: initialize based on _isSidebarExpanded
+    _sidebarController = AnimationController(
+      vsync: this,
+      duration: _panelAnimDuration,
+      value: _isSidebarExpanded ? 1.0 : 0.0,
+    );
+
+    // track focus to change label/border color
+    _noteFocusNode.addListener(() {
+      if (mounted) setState(() {});
+    });
   }
 
   Future<void> _initFiles() async {
@@ -905,11 +926,13 @@ class _StudyClockPageState extends State<StudyClockPage>
   void dispose() {
     _timer?.cancel();
     _noteController.dispose();
+    _noteFocusNode.dispose();
     _breathController.dispose();
     try {
       _audioPlayer.dispose();
     } catch (_) {}
     _customMinutesController?.dispose();
+    _sidebarController.dispose();
     super.dispose();
   }
 
@@ -930,14 +953,20 @@ class _StudyClockPageState extends State<StudyClockPage>
     }
   }
 
+  void _toggleSidebar() {
+    if (_sidebarController.isAnimating) return;
+    if (_sidebarController.value > 0.5) {
+      // close
+      _sidebarController.reverse();
+      setState(() => _isSidebarExpanded = false);
+    } else {
+      _sidebarController.forward();
+      setState(() => _isSidebarExpanded = true);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
-    final sidebarExpandedWidth = 320.0;
-    final sidebarCollapsedWidth = 60.0;
-    final leftPanelWidth = _isSidebarExpanded
-        ? sidebarExpandedWidth
-        : sidebarCollapsedWidth;
-
     return Scaffold(
       appBar: AppBar(
         title: const Text('学习钟'),
@@ -947,47 +976,76 @@ class _StudyClockPageState extends State<StudyClockPage>
       ),
       body: Row(
         children: [
-          // Sidebar - now uses AnimatedContainer for smooth expand/collapse
-          AnimatedContainer(
-            duration: _panelAnimDuration,
-            curve: _panelAnimCurve,
-            width: leftPanelWidth,
-            color: const Color(0xFF1A1A2E),
-            child: Column(
-              children: [
-                const SizedBox(height: 12),
-                if (_isSidebarExpanded)
-                  Row(
+          // Sidebar - smooth width animation driven by controller
+          AnimatedBuilder(
+            animation: _sidebarController,
+            builder: (ctx, child) {
+              final t = Curves.easeInOut.transform(_sidebarController.value);
+              final width = lerpDouble(
+                _sidebarCollapsedWidth,
+                _sidebarExpandedWidth,
+                t,
+              )!;
+              // opacity & blur for content: when collapsed (t->0) content should be blurred and transparent
+              final contentOpacity = t.clamp(0.0, 1.0);
+              final blurSigma = (1.0 - t) * _sidebarMaxBlur;
+              final showFullHeader = t > 0.45;
+
+              return SizedBox(
+                width: width,
+                child: Container(
+                  color: const Color(0xFF1A1A2E),
+                  child: Column(
                     children: [
-                      const SizedBox(width: 12),
-                      const Expanded(
-                        child: Text(
-                          '学科',
-                          style: TextStyle(color: Colors.white70, fontSize: 16),
+                      const SizedBox(height: 12),
+                      if (showFullHeader)
+                        Row(
+                          children: [
+                            const SizedBox(width: 12),
+                            const Expanded(
+                              child: Text(
+                                '学科',
+                                style: TextStyle(
+                                  color: Colors.white70,
+                                  fontSize: 16,
+                                ),
+                              ),
+                            ),
+                            IconButton(
+                              icon: const Icon(
+                                Icons.chevron_left,
+                                color: Colors.white70,
+                              ),
+                              onPressed: _toggleSidebar,
+                            ),
+                            const SizedBox(width: 6),
+                          ],
+                        )
+                      else
+                        const SizedBox(height: 44),
+                      const SizedBox(height: 4),
+                      Expanded(
+                        child: ClipRect(
+                          child: Opacity(
+                            opacity: contentOpacity,
+                            child: ImageFiltered(
+                              imageFilter: ImageFilter.blur(
+                                sigmaX: blurSigma,
+                                sigmaY: blurSigma,
+                              ),
+                              child: _isSidebarExpanded
+                                  ? _buildExpandedSidebarContent()
+                                  : _buildCollapsedSidebarContent(),
+                            ),
+                          ),
                         ),
                       ),
-                      IconButton(
-                        icon: const Icon(
-                          Icons.chevron_left,
-                          color: Colors.white70,
-                        ),
-                        onPressed: () =>
-                            setState(() => _isSidebarExpanded = false),
-                      ),
-                      const SizedBox(width: 6),
+                      const SizedBox(height: 8),
                     ],
-                  )
-                else
-                  const SizedBox(height: 44),
-                const SizedBox(height: 4),
-                Expanded(
-                  child: _isSidebarExpanded
-                      ? _buildExpandedSidebarContent()
-                      : _buildCollapsedSidebarContent(),
+                  ),
                 ),
-                const SizedBox(height: 8),
-              ],
-            ),
+              );
+            },
           ),
 
           // Main area
@@ -1016,7 +1074,7 @@ class _StudyClockPageState extends State<StudyClockPage>
                     ] else ...[
                       _buildTimerNormal(context),
                       const SizedBox(height: 12),
-                      _buildNoteInputNormal(), // uses the new TextField snippet
+                      _buildNoteInputNormal(),
                       const SizedBox(height: 12),
                       _buildControlsNormal(),
                       const SizedBox(height: 12),
@@ -1332,7 +1390,7 @@ class _StudyClockPageState extends State<StudyClockPage>
                 color: Colors.white70,
                 size: 28,
               ),
-              onPressed: () => setState(() => _isSidebarExpanded = true),
+              onPressed: _toggleSidebar,
             ),
           ),
         ),
@@ -1656,20 +1714,55 @@ class _StudyClockPageState extends State<StudyClockPage>
             bottom: -36,
             child: Column(
               children: [
-                // 使用你提供的备注输入样式（根据 _isRunning 控制 enabled）
-                TextField(
-                  controller: _noteController,
-                  decoration: const InputDecoration(
-                    labelText: '添加备注（可选）',
-                    hintText: '例如：数学刷题、英语背诵...',
-                    prefixIcon: Icon(
-                      Icons.note_add_outlined,
-                      color: Colors.white60,
+                // Compact outlined note input with floating label (matches your requested interaction)
+                Material(
+                  color: Colors.transparent,
+                  child: TextField(
+                    focusNode: _noteFocusNode,
+                    controller: _noteController,
+                    decoration: InputDecoration(
+                      labelText: '添加备注（可选）',
+                      hintText: '例如：数学刷题、英语背诵...',
+                      prefixIcon: const Icon(
+                        Icons.note_add_outlined,
+                        color: Colors.white60,
+                      ),
+                      isDense: true,
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 10,
+                      ),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8),
+                        borderSide: BorderSide(color: Colors.white12),
+                      ),
+                      enabledBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8),
+                        borderSide: BorderSide(color: Colors.white12),
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8),
+                        borderSide: BorderSide(
+                          color: Theme.of(context).colorScheme.primary,
+                          width: 2,
+                        ),
+                      ),
+                      floatingLabelBehavior: FloatingLabelBehavior.auto,
+                      labelStyle: TextStyle(
+                        color: _noteFocusNode.hasFocus
+                            ? Theme.of(context).colorScheme.primary
+                            : Colors.white60,
+                        fontSize: 14,
+                      ),
+                      hintStyle: const TextStyle(
+                        color: Colors.white38,
+                        fontSize: 13,
+                      ),
                     ),
+                    enabled: !_isRunning,
+                    style: const TextStyle(fontSize: 14, color: Colors.white),
+                    cursorColor: Theme.of(context).colorScheme.primary,
                   ),
-                  enabled: !_isRunning,
-                  style: const TextStyle(fontSize: 16, color: Colors.white),
-                  cursorColor: const Color(0xFF42A5F5),
                 ),
                 const SizedBox(height: 20),
                 Row(
@@ -1677,6 +1770,7 @@ class _StudyClockPageState extends State<StudyClockPage>
                   children: [
                     ElevatedButton(
                       onPressed: () {
+                        // ensure settings collapse and then start
                         setState(() => _isSettingsExpanded = false);
                         _startTimer();
                       },
@@ -1784,30 +1878,37 @@ class _StudyClockPageState extends State<StudyClockPage>
   }
 
   Widget _buildNoteInputNormal() {
-    // 使用你提供的备注输入样式（label + hint + icon + enabled 控制）
+    // Compact single-line outlined TextField with floating label and small height
     return Container(
       decoration: BoxDecoration(
         color: const Color(0xFF24243E),
         borderRadius: BorderRadius.circular(8),
         border: Border.all(color: const Color(0xFF3A3A5A)),
       ),
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-      child: Column(
-        children: [
-          TextField(
-            controller: _noteController,
-            decoration: const InputDecoration(
-              labelText: '添加备注（可选）',
-              hintText: '例如：数学刷题、英语背诵...',
-              prefixIcon: Icon(Icons.note_add_outlined, color: Colors.white60),
-              border: InputBorder.none,
-            ),
-            enabled: !_isRunning,
-            style: const TextStyle(fontSize: 16, color: Colors.white),
-            cursorColor: const Color(0xFF42A5F5),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+      child: TextField(
+        focusNode: _noteFocusNode,
+        controller: _noteController,
+        decoration: InputDecoration(
+          labelText: '添加备注（可选）',
+          hintText: '例如：数学刷题、英语背诵...',
+          prefixIcon: const Icon(
+            Icons.note_add_outlined,
+            color: Colors.white60,
           ),
-          const SizedBox(height: 20),
-        ],
+          isDense: true,
+          contentPadding: const EdgeInsets.symmetric(
+            horizontal: 10,
+            vertical: 10,
+          ),
+          border: InputBorder.none,
+          // We wrap Outline borders by providing decoration through container border above,
+          // but to get the floating label effect with underline we use an InputDecorator-like approach:
+          // Use labelStyle and adjust behavior; we simulate focused border using FocusNode in parent.
+        ),
+        enabled: !_isRunning,
+        style: const TextStyle(fontSize: 14, color: Colors.white),
+        cursorColor: Theme.of(context).colorScheme.primary,
       ),
     );
   }
