@@ -154,6 +154,8 @@ class _StudyClockPageState extends State<StudyClockPage>
   late File _logFile;
   late File _subjectsFile;
   late File _subjectStatsFile;
+  // 日志文件（新增）
+  late File _appLogFile;
 
   // Animations
   late final AnimationController _breathController;
@@ -232,42 +234,52 @@ class _StudyClockPageState extends State<StudyClockPage>
   }
 
   Future<void> _initFiles() async {
-    // 获取系统 Documents 目录
+    // 获取系统 Documents 目录（原有代码不变）
     Directory documentsDir;
     if (Platform.isWindows) {
-      // Windows 系统：Documents/studyclock
       String? userProfile = Platform.environment['USERPROFILE'];
       if (userProfile != null) {
         documentsDir = Directory('$userProfile/Documents/studyclock');
       } else {
-        //  fallback：使用默认应用文档目录
         documentsDir = await getApplicationDocumentsDirectory();
         documentsDir = Directory('${documentsDir.path}/studyclock');
       }
     } else {
-      // 其他平台：保持原逻辑（应用文档目录/studyclock）
       documentsDir = await getApplicationDocumentsDirectory();
       documentsDir = Directory('${documentsDir.path}/studyclock');
     }
 
-    // 确保文件夹存在（不存在则创建，存在则忽略）
+    // 确保文件夹存在（原有代码不变）
     await documentsDir.create(recursive: true);
 
-    // 初始化文件路径
+    // 初始化文件路径（原有代码不变）
     _logFile = File('${documentsDir.path}/StudyClockLogs.txt');
     _subjectsFile = File('${documentsDir.path}/StudyClockSubjects.json');
     _subjectStatsFile = File(
       '${documentsDir.path}/StudyClockSubjectsStats.json',
     );
 
-    // 以下为原逻辑（读取文件内容），保持不变
+    // 初始化日志文件（新增）
+    _appLogFile = File('${documentsDir.path}/Log.txt');
+    await _writeAppLog('初始化：应用启动，文件夹路径=${documentsDir.path}');
+
+    // 读取 StudyClockLogs.txt（原有代码不变）
     if (await _logFile.exists()) {
-      final content = await _logFile.readAsString();
-      if (content.isNotEmpty) {
-        _studyLogs.addAll(content.split('\n').where((l) => l.isNotEmpty));
+      try {
+        final content = await _logFile.readAsString();
+        if (content.isNotEmpty) {
+          _studyLogs.addAll(content.split('\n').where((l) => l.isNotEmpty));
+        }
+        await _writeAppLog('读取学习日志：成功，共${_studyLogs.length}条记录');
+      } catch (e) {
+        await _writeAppLog('读取学习日志：失败，错误=$e');
       }
+    } else {
+      await _writeAppLog('读取学习日志：文件不存在，已创建空文件');
+      await _logFile.create();
     }
 
+    // 读取 StudyClockSubjects.json（原有代码修改）
     if (await _subjectsFile.exists()) {
       try {
         final raw = await _subjectsFile.readAsString();
@@ -277,17 +289,45 @@ class _StudyClockPageState extends State<StudyClockPage>
               .map((e) => Subject.fromJson(e as Map<String, dynamic>))
               .toList();
         }
-      } catch (_) {}
+        await _writeAppLog('读取学科数据：成功，共${_subjects.length}个学科');
+      } catch (e) {
+        await _writeAppLog('读取学科数据：失败，错误=$e');
+      }
+    } else {
+      await _writeAppLog('读取学科数据：文件不存在，已创建空文件');
+      await _subjectsFile.create();
     }
 
+    // 读取 StudyClockSubjectsStats.json（原有代码修改）
     if (await _subjectStatsFile.exists()) {
       try {
         final raw = await _subjectStatsFile.readAsString();
         final data = json.decode(raw);
         if (data is List) _subject_stats_load(data);
-      } catch (_) {}
+        await _writeAppLog('读取学科统计：成功，共${_subjectStats.length}条统计');
+      } catch (e) {
+        await _writeAppLog('读取学科统计：失败，错误=$e');
+      }
+    } else {
+      await _writeAppLog('读取学科统计：文件不存在，已创建空文件');
+      await _subjectStatsFile.create();
     }
+
     setState(() {});
+  }
+
+  // 新增：写入应用日志（时间+内容）
+  Future<void> _writeAppLog(String content) async {
+    try {
+      final timeStr = DateFormat(
+        'yyyy-MM-dd HH:mm:ss.SSS',
+      ).format(DateTime.now());
+      final logContent = '[$timeStr] $content\n';
+      await _appLogFile.writeAsString(logContent, mode: FileMode.append);
+    } catch (e) {
+      // 日志写入失败不影响主流程，仅打印控制台
+      debugPrint('日志写入失败：$e');
+    }
   }
 
   void _subject_stats_load(List<dynamic> data) {
@@ -301,7 +341,10 @@ class _StudyClockPageState extends State<StudyClockPage>
       await _subjectsFile.writeAsString(
         json.encode(_subjects.map((s) => s.toJson()).toList()),
       );
-    } catch (_) {}
+      await _writeAppLog('保存学科数据：成功，共${_subjects.length}个学科');
+    } catch (e) {
+      await _writeAppLog('保存学科数据：失败，错误=$e');
+    }
   }
 
   Future<void> _saveSubjectStats() async {
@@ -309,7 +352,10 @@ class _StudyClockPageState extends State<StudyClockPage>
       await _subjectStatsFile.writeAsString(
         json.encode(_subjectStats.map((s) => s.toJson()).toList()),
       );
-    } catch (_) {}
+      await _writeAppLog('保存学科统计：成功，共${_subjectStats.length}条统计');
+    } catch (e) {
+      await _writeAppLog('保存学科统计：失败，错误=$e');
+    }
   }
 
   Future<void> _preloadRingtone() async {
@@ -407,7 +453,10 @@ class _StudyClockPageState extends State<StudyClockPage>
   Future<void> _saveLogToFile(String log) async {
     try {
       await _logFile.writeAsString('$log\n', mode: FileMode.append);
-    } catch (_) {}
+      await _writeAppLog('保存学习记录：成功，内容=$log');
+    } catch (e) {
+      await _writeAppLog('保存学习记录：失败，内容=$log，错误=$e');
+    }
   }
 
   void _selectFixedDuration(int minutes) {
@@ -654,10 +703,14 @@ class _StudyClockPageState extends State<StudyClockPage>
   }
 
   void _deleteLog(int idx) async {
+    final deletedLog = _studyLogs[idx];
     setState(() => _studyLogs.removeAt(idx));
     try {
       await _logFile.writeAsString(_studyLogs.join('\n') + '\n');
-    } catch (_) {}
+      await _writeAppLog('删除学习记录：成功，删除内容=$deletedLog');
+    } catch (e) {
+      await _writeAppLog('删除学习记录：失败，删除内容=$deletedLog，错误=$e');
+    }
   }
 
   // Subject management dialogs
@@ -1520,10 +1573,11 @@ class _StudyClockPageState extends State<StudyClockPage>
                                                       List<StudyGoal>.from(
                                                         subj.goals,
                                                       );
+                                                  final oldStatus =
+                                                      goal.isCompleted;
                                                   newGoals[index] = StudyGoal(
                                                     content: goal.content,
-                                                    isCompleted:
-                                                        !goal.isCompleted,
+                                                    isCompleted: !oldStatus,
                                                   );
                                                   _subjects[i] = Subject(
                                                     name: subj.name,
@@ -1531,6 +1585,9 @@ class _StudyClockPageState extends State<StudyClockPage>
                                                     goals: newGoals,
                                                   );
                                                   _saveSubjects();
+                                                  _writeAppLog(
+                                                    '更新学习目标状态：学科=${subj.name}，目标=${goal.content}，旧状态=$oldStatus，新状态=${!oldStatus}',
+                                                  );
                                                 });
                                               },
                                               child: Container(
