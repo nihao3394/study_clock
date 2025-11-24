@@ -51,17 +51,36 @@ class StudyClockApp extends StatelessWidget {
 }
 
 // Data models
+class StudyGoal {
+  final String content;
+  bool isCompleted;
+
+  StudyGoal({required this.content, this.isCompleted = false});
+
+  Map<String, dynamic> toJson() => {
+    'content': content,
+    'isCompleted': isCompleted,
+  };
+
+  factory StudyGoal.fromJson(Map<String, dynamic> json) {
+    return StudyGoal(
+      content: json['content'] as String,
+      isCompleted: json['isCompleted'] as bool? ?? false,
+    );
+  }
+}
+
 class Subject {
   final String name;
   final int priority;
-  final List<String> goals;
+  final List<StudyGoal> goals; // 改为 StudyGoal 类型列表（原 List<String>）
 
   Subject({required this.name, this.priority = 0, this.goals = const []});
 
   Map<String, dynamic> toJson() => {
     'name': name,
     'priority': priority,
-    'goals': goals,
+    'goals': goals.map((e) => e.toJson()).toList(),
   };
 
   factory Subject.fromJson(Map<String, dynamic> json) {
@@ -70,10 +89,27 @@ class Subject {
       priority: json['priority'] as int? ?? 0,
       goals:
           (json['goals'] as List<dynamic>?)
-              ?.map((e) => e.toString())
+              ?.map((e) => StudyGoal.fromJson(e as Map<String, dynamic>))
               .toList() ??
           [],
     );
+  }
+
+  // 新增：计算目标完成度（百分比）
+  double get completionRate {
+    if (goals.isEmpty) return 0.0;
+    final completedCount = goals.where((goal) => goal.isCompleted).length;
+    return (completedCount / goals.length) * 100;
+  }
+
+  // 新增：根据完成度获取进度条颜色
+  Color get progressColor {
+    final rate = completionRate;
+    if (rate <= 20) return const Color(0xFF8BC34A); // 草绿色
+    if (rate <= 40) return const Color(0xFF03A9F4); // 海蓝色
+    if (rate <= 60) return const Color(0xFF9C27B0); // 紫色
+    if (rate <= 80) return const Color(0xFFFF9800); // 橙色
+    return const Color(0xFFF44336); // 红色
   }
 }
 
@@ -624,6 +660,7 @@ class _StudyClockPageState extends State<StudyClockPage>
   }
 
   // Subject management dialogs
+  // 替换原 _addSubject 方法（修改目标转换逻辑，适配 StudyGoal）
   void _addSubject() {
     final nameController = TextEditingController();
     final goalsController = TextEditingController();
@@ -688,7 +725,7 @@ class _StudyClockPageState extends State<StudyClockPage>
                   TextField(
                     controller: goalsController,
                     decoration: InputDecoration(
-                      labelText: '学习目标（每行一条）',
+                      labelText: '学习目标（回车键以分行）',
                       labelStyle: const TextStyle(color: Colors.white60),
                       border: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(8),
@@ -734,10 +771,12 @@ class _StudyClockPageState extends State<StudyClockPage>
                     }
                     return;
                   }
+                  // 关键修改：转换为 StudyGoal 列表（原直接转 String 列表）
                   final goals = goalsController.text
                       .split('\n')
                       .map((e) => e.trim())
                       .where((e) => e.isNotEmpty)
+                      .map((e) => StudyGoal(content: e)) // 转为带勾选状态的目标
                       .toList();
                   setState(() {
                     _subjects.add(
@@ -759,11 +798,12 @@ class _StudyClockPageState extends State<StudyClockPage>
     );
   }
 
+  // 替换原 _editSubject 方法（适配 StudyGoal 类型，保留勾选状态）
   void _editSubject(Subject subject) {
     final nameController = TextEditingController(text: subject.name);
-    final goalsController = TextEditingController(
-      text: subject.goals.join('\n'),
-    );
+    // 关键修改：转换 StudyGoal 列表为字符串（换行分隔，保留原内容）
+    final goalsText = subject.goals.map((goal) => goal.content).join('\n');
+    final goalsController = TextEditingController(text: goalsText);
     int priority = subject.priority;
     showDialog(
       context: context,
@@ -825,7 +865,7 @@ class _StudyClockPageState extends State<StudyClockPage>
                   TextField(
                     controller: goalsController,
                     decoration: InputDecoration(
-                      labelText: '学习目标（每行一条）',
+                      labelText: '学习目标（回车键以分行）',
                       labelStyle: const TextStyle(color: Colors.white60),
                       border: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(8),
@@ -873,11 +913,23 @@ class _StudyClockPageState extends State<StudyClockPage>
                     }
                     return;
                   }
-                  final goals = goalsController.text
+                  // 关键修改：转换为 StudyGoal 列表（保留原有勾选状态）
+                  final newGoalsText = goalsController.text
                       .split('\n')
                       .map((e) => e.trim())
                       .where((e) => e.isNotEmpty)
                       .toList();
+                  final newGoals = <StudyGoal>[];
+
+                  // 保留原有已存在目标的勾选状态
+                  for (final text in newGoalsText) {
+                    final existingGoal = subject.goals.firstWhere(
+                      (g) => g.content == text,
+                      orElse: () => StudyGoal(content: text),
+                    );
+                    newGoals.add(existingGoal);
+                  }
+
                   final idx = _subjects.indexWhere(
                     (s) => s.name == subject.name,
                   );
@@ -886,7 +938,7 @@ class _StudyClockPageState extends State<StudyClockPage>
                       _subjects[idx] = Subject(
                         name: name,
                         priority: priority,
-                        goals: goals,
+                        goals: newGoals, // 传入带勾选状态的目标列表
                       );
                       if (_currentSubject?.name == subject.name)
                         _currentSubject = _subjects[idx];
@@ -929,6 +981,7 @@ class _StudyClockPageState extends State<StudyClockPage>
     });
   }
 
+  // 替换原 _updatePriority 方法（适配新的 Subject 结构，保留目标勾选状态）
   void _updatePriority(Subject subj, int p) {
     final idx = _subjects.indexWhere((s) => s.name == subj.name);
     if (idx != -1) {
@@ -936,7 +989,7 @@ class _StudyClockPageState extends State<StudyClockPage>
         _subjects[idx] = Subject(
           name: subj.name,
           priority: p,
-          goals: subj.goals,
+          goals: subj.goals, // 关键：保留原有目标列表（包含勾选状态）
         );
         if (_currentSubject?.name == subj.name)
           _currentSubject = _subjects[idx];
@@ -1220,6 +1273,7 @@ class _StudyClockPageState extends State<StudyClockPage>
   }
 
   // Sidebar content widgets (expanded/collapsed)
+  // 替换原 _buildExpandedSidebarContent 方法（添加可勾选方框 + 进度条）
   Widget _buildExpandedSidebarContent() {
     return Column(
       children: [
@@ -1243,8 +1297,11 @@ class _StudyClockPageState extends State<StudyClockPage>
               : ListView.builder(
                   itemCount: _subjects.length,
                   itemBuilder: (ctx, i) {
-                    final subj = _subjects[i];
-                    final isExpanded = _expandedSubjects.contains(subj.name);
+                    // 明确变量类型，避免隐式推断错误
+                    final Subject subj = _subjects[i];
+                    final bool isExpanded = _expandedSubjects.contains(
+                      subj.name,
+                    );
                     return Column(
                       children: [
                         ListTile(
@@ -1290,7 +1347,7 @@ class _StudyClockPageState extends State<StudyClockPage>
                           ),
                           onTap: () => _selectSubject(subj),
                         ),
-                        // Instant show/hide details (no animation)
+                        // 展开的学科详情
                         if (isExpanded)
                           Container(
                             color: const Color(0xFF24243E),
@@ -1310,6 +1367,7 @@ class _StudyClockPageState extends State<StudyClockPage>
                                   mainAxisAlignment:
                                       MainAxisAlignment.spaceEvenly,
                                   children: [
+                                    // 修复：PriorityColorButton 确保参数为命名参数（与组件定义匹配）
                                     PriorityColorButton(
                                       color: Colors.blue,
                                       isSelected: subj.priority == 0,
@@ -1337,12 +1395,48 @@ class _StudyClockPageState extends State<StudyClockPage>
                                     ),
                                   ],
                                 ),
-                                const SizedBox(height: 8),
+                                const SizedBox(height: 12),
                                 const Text(
                                   '学习目标',
                                   style: TextStyle(color: Colors.white70),
                                 ),
-                                const SizedBox(height: 8),
+                                const SizedBox(height: 6),
+                                // 进度条布局
+                                Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      '完成度 ${subj.completionRate.toStringAsFixed(0)}%',
+                                      style: const TextStyle(
+                                        color: Colors.white70,
+                                        fontSize: 14,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 4),
+                                    Container(
+                                      height: 8,
+                                      width: double.infinity,
+                                      decoration: BoxDecoration(
+                                        color: const Color(0xFF3A3A5A),
+                                        borderRadius: BorderRadius.circular(4),
+                                      ),
+                                      child: FractionallySizedBox(
+                                        alignment: Alignment.centerLeft,
+                                        widthFactor: subj.completionRate / 100,
+                                        child: Container(
+                                          decoration: BoxDecoration(
+                                            color: subj.progressColor,
+                                            borderRadius: BorderRadius.circular(
+                                              4,
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 10),
+                                // 学习目标列表
                                 if (subj.goals.isEmpty)
                                   const Text(
                                     '暂无目标',
@@ -1350,33 +1444,83 @@ class _StudyClockPageState extends State<StudyClockPage>
                                   )
                                 else
                                   Column(
-                                    children: subj.goals
-                                        .map(
-                                          (g) => Padding(
-                                            padding: const EdgeInsets.symmetric(
-                                              vertical: 2,
-                                            ),
-                                            child: Row(
-                                              children: [
-                                                const Text(
-                                                  '• ',
-                                                  style: TextStyle(
-                                                    color: Colors.white70,
+                                    children: subj.goals.asMap().entries.map((
+                                      entry,
+                                    ) {
+                                      final int index = entry.key;
+                                      final StudyGoal goal = entry.value;
+                                      return Padding(
+                                        padding: const EdgeInsets.symmetric(
+                                          vertical: 4,
+                                        ),
+                                        child: Row(
+                                          children: [
+                                            // 勾选框：透明背景 + 白色边框 + 白色对勾
+                                            GestureDetector(
+                                              onTap: () {
+                                                setState(() {
+                                                  final List<StudyGoal>
+                                                  newGoals =
+                                                      List<StudyGoal>.from(
+                                                        subj.goals,
+                                                      );
+                                                  newGoals[index] = StudyGoal(
+                                                    content: goal.content,
+                                                    isCompleted:
+                                                        !goal.isCompleted,
+                                                  );
+                                                  _subjects[i] = Subject(
+                                                    name: subj.name,
+                                                    priority: subj.priority,
+                                                    goals: newGoals,
+                                                  );
+                                                  _saveSubjects();
+                                                });
+                                              },
+                                              child: Container(
+                                                width: 18,
+                                                height: 18,
+                                                decoration: BoxDecoration(
+                                                  color: Colors.transparent,
+                                                  border: Border.all(
+                                                    color: Colors.white,
+                                                    width: 1.5,
                                                   ),
+                                                  borderRadius:
+                                                      BorderRadius.circular(4),
                                                 ),
-                                                Flexible(
-                                                  child: Text(
-                                                    g,
-                                                    style: const TextStyle(
-                                                      color: Colors.white,
-                                                    ),
-                                                  ),
-                                                ),
-                                              ],
+                                                child: goal.isCompleted
+                                                    ? const Icon(
+                                                        Icons.check,
+                                                        size: 12,
+                                                        color: Colors.white,
+                                                      )
+                                                    : null,
+                                              ),
                                             ),
-                                          ),
-                                        )
-                                        .toList(),
+                                            const SizedBox(width: 10),
+                                            Flexible(
+                                              child: Text(
+                                                goal.content,
+                                                style: TextStyle(
+                                                  color: goal.isCompleted
+                                                      ? const Color(0xFF9E9E9E)
+                                                      : Colors.white,
+                                                  decoration: goal.isCompleted
+                                                      ? TextDecoration
+                                                            .lineThrough
+                                                      : TextDecoration.none,
+                                                  decorationColor: const Color(
+                                                    0xFF9E9E9E,
+                                                  ),
+                                                  decorationThickness: 2,
+                                                ),
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      );
+                                    }).toList(),
                                   ),
                                 const SizedBox(height: 8),
                                 const Text(
