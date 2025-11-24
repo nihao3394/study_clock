@@ -799,6 +799,7 @@ class _StudyClockPageState extends State<StudyClockPage>
   }
 
   // 替换原 _editSubject 方法（适配 StudyGoal 类型，保留勾选状态）
+  // 替换原 _editSubject 方法（仅添加删除功能，其他逻辑完全不变）
   void _editSubject(Subject subject) {
     final nameController = TextEditingController(text: subject.name);
     // 关键修改：转换 StudyGoal 列表为字符串（换行分隔，保留原内容）
@@ -879,6 +880,60 @@ class _StudyClockPageState extends State<StudyClockPage>
               ),
             ),
             actions: [
+              // 新增：删除按钮（红色文字）
+              TextButton(
+                onPressed: () {
+                  // 关闭编辑弹窗，打开删除确认弹窗
+                  Navigator.pop(ctx);
+                  showDialog(
+                    context: context,
+                    builder: (deleteCtx) => AlertDialog(
+                      backgroundColor: const Color(0xFF24243E),
+                      title: const Text(
+                        '确认删除',
+                        style: TextStyle(color: Colors.white),
+                      ),
+                      content: const Text(
+                        '该科目将被删除，但您的相关数据将被保留，之后您可在timechecker中进行查看，确认删除？',
+                        style: TextStyle(color: Colors.white70),
+                      ),
+                      actions: [
+                        TextButton(
+                          onPressed: () => Navigator.pop(deleteCtx), // 取消删除
+                          child: const Text(
+                            '取消',
+                            style: TextStyle(color: Colors.white70),
+                          ),
+                        ),
+                        TextButton(
+                          onPressed: () {
+                            // 执行删除逻辑
+                            setState(() {
+                              // 从学科列表移除
+                              _subjects.removeWhere(
+                                (s) => s.name == subject.name,
+                              );
+                              // 移除展开状态
+                              _expandedSubjects.remove(subject.name);
+                              // 如果当前选中的是该学科，取消选中
+                              if (_currentSubject?.name == subject.name) {
+                                _currentSubject = null;
+                              }
+                              _saveSubjects(); // 保存修改
+                            });
+                            Navigator.pop(deleteCtx); // 关闭确认弹窗
+                          },
+                          child: const Text(
+                            '确认',
+                            style: TextStyle(color: Colors.red),
+                          ),
+                        ),
+                      ],
+                    ),
+                  );
+                },
+                child: const Text('删除', style: TextStyle(color: Colors.red)),
+              ),
               TextButton(
                 onPressed: () => Navigator.pop(ctx),
                 child: const Text(
