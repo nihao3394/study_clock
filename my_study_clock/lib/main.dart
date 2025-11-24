@@ -15,6 +15,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:path/path.dart' as Path;
 
 void main() {
   if (Platform.isWindows || Platform.isMacOS || Platform.isLinux) {
@@ -32,9 +33,10 @@ class StudyClockApp extends StatelessWidget {
       title: '学习钟',
       theme: ThemeData(
         useMaterial3: true,
-        brightness: Brightness.dark,
+        brightness: Brightness.dark, // ThemeData 的亮度
         colorScheme: ColorScheme.fromSeed(
           seedColor: const Color(0xFF2196F3),
+          brightness: Brightness.dark, // 新增：与 ThemeData 亮度保持一致
           primary: const Color(0xFF42A5F5),
           secondary: const Color(0xFF66BB6A),
           surface: const Color(0xFF1A1A2E),
@@ -139,7 +141,7 @@ class StudyClockPage extends StatefulWidget {
 }
 
 class _StudyClockPageState extends State<StudyClockPage>
-    with SingleTickerProviderStateMixin {
+    with TickerProviderStateMixin {
   // Timer state
   int _seconds = 0;
   bool _isRunning = false;
@@ -231,68 +233,129 @@ class _StudyClockPageState extends State<StudyClockPage>
   }
 
   Future<void> _initFiles() async {
-    // 获取系统 Documents 目录
     Directory documentsDir;
+
+    // 1. 获取系统 Documents 目录（完全依赖 path_provider 和 path 包）
     if (Platform.isWindows) {
-      // Windows 系统：Documents/studyclock
-      String? userProfile = Platform.environment['USERPROFILE'];
-      if (userProfile != null) {
-        documentsDir = Directory('$userProfile/Documents/studyclock');
-      } else {
-        //  fallback：使用默认应用文档目录
-        documentsDir = await getApplicationDocumentsDirectory();
-        documentsDir = Directory('${documentsDir.path}/studyclock');
-      }
-    } else {
-      // 其他平台：保持原逻辑（应用文档目录/studyclock）
+      // 优先通过系统 API 获取 Documents 目录（最可靠）
       documentsDir = await getApplicationDocumentsDirectory();
-      documentsDir = Directory('${documentsDir.path}/studyclock');
+      // 拼接 studyclock 子目录（使用 Path.join 自动处理分隔符）
+      documentsDir = Directory(Path.join(documentsDir.path, 'studyclock'));
+    } else {
+      // 其他平台逻辑不变
+      documentsDir = await getApplicationDocumentsDirectory();
+      documentsDir = Directory(Path.join(documentsDir.path, 'studyclock'));
     }
 
-    // 确保文件夹存在（不存在则创建，存在则忽略）
+    // 2. 强制创建目录（确保文件夹存在）
     await documentsDir.create(recursive: true);
+    debugPrint('配置文件夹已确认存在：${documentsDir.path}'); // 关键：确认文件夹路径
 
-    // 初始化文件路径
-    _logFile = File('${documentsDir.path}/StudyClockLogs.txt');
-    _subjectsFile = File('${documentsDir.path}/StudyClockSubjects.json');
+    // 3. 初始化文件路径（严格使用 Path.join，避免大小写错误）
+    _logFile = File(Path.join(documentsDir.path, 'StudyClockLogs.txt'));
+    _subjectsFile = File(
+      Path.join(documentsDir.path, 'StudyClockSubjects.json'),
+    );
     _subjectStatsFile = File(
-      '${documentsDir.path}/StudyClockSubjectsStats.json',
+      Path.join(documentsDir.path, 'StudyClockSubjectsStats.json'),
     );
 
-    // 以下为原逻辑（读取文件内容），保持不变
-    if (await _logFile.exists()) {
-      final content = await _logFile.readAsString();
-      if (content.isNotEmpty) {
-        _studyLogs.addAll(content.split('\n').where((l) => l.isNotEmpty));
-      }
-    }
+    // 4. 打印文件路径并验证是否存在（核心调试信息）
+    debugPrint('日志文件路径：${_logFile.path}，是否存在：${await _logFile.exists()}');
+    debugPrint(
+      '学科文件路径：${_subjectsFile.path}，是否存在：${await _subjectsFile.exists()}',
+    );
+    debugPrint(
+      '统计文件路径：${_subjectStatsFile.path}，是否存在：${await _subjectStatsFile.exists()}',
+    );
 
-    if (await _subjectsFile.exists()) {
-      try {
-        final raw = await _subjectsFile.readAsString();
-        final data = json.decode(raw);
-        if (data is List) {
-          _subjects = data
-              .map((e) => Subject.fromJson(e as Map<String, dynamic>))
-              .toList();
+    // 5. 读取日志文件（增加详细错误提示）
+    try {
+      if (await _logFile.exists()) {
+        final content = await _logFile.readAsString();
+        if (content.isNotEmpty) {
+          _studyLogs.addAll(content.split('\n').where((l) => l.isNotEmpty));
+          _showSnackBar('日志文件加载成功，共 ${_studyLogs.length} 条记录', Colors.green);
+        } else {
+          _showSnackBar('日志文件为空', Colors.orange);
         }
-      } catch (_) {}
+      } else {
+        _showSnackBar('日志文件不存在，将创建新文件', Colors.blue);
+        await _logFile.create(); // 主动创建空文件
+      }
+    } catch (e) {
+      _showSnackBar('日志文件读取失败：${e.toString()}', Colors.red);
     }
 
-    if (await _subjectStatsFile.exists()) {
-      try {
-        final raw = await _subjectStatsFile.readAsString();
-        final data = json.decode(raw);
-        if (data is List) _subject_stats_load(data);
-      } catch (_) {}
+    // 6. 读取学科文件（增加详细错误提示）
+    try {
+      if (await _subjectsFile.exists()) {
+        final rawContent = await _subjectsFile.readAsString();
+        if (rawContent.isEmpty) {
+          _showSnackBar('学科文件为空', Colors.orange);
+        } else {
+          final jsonData = json.decode(rawContent.trim());
+          if (jsonData is List) {
+            _subjects = jsonData
+                .map(
+                  (item) => Subject.fromJson(Map<String, dynamic>.from(item)),
+                )
+                .toList();
+            _showSnackBar('学科文件加载成功，共 ${_subjects.length} 个学科', Colors.green);
+          } else {
+            _showSnackBar('学科文件格式错误（需为数组）', Colors.red);
+          }
+        }
+      } else {
+        _showSnackBar('学科文件不存在，将创建新文件', Colors.blue);
+        await _subjectsFile.create(); // 主动创建空文件
+      }
+    } catch (e) {
+      _showSnackBar('学科文件读取失败：${e.toString()}', Colors.red);
     }
-    setState(() {});
+
+    // 7. 读取统计文件（增加详细错误提示）
+    try {
+      if (await _subjectStatsFile.exists()) {
+        final rawContent = await _subjectStatsFile.readAsString();
+        if (rawContent.isEmpty) {
+          _showSnackBar('统计文件为空', Colors.orange);
+        } else {
+          final jsonData = json.decode(rawContent.trim());
+          if (jsonData is List) {
+            _subjectStats = jsonData
+                .map(
+                  (item) =>
+                      SubjectStat.fromJson(Map<String, dynamic>.from(item)),
+                )
+                .toList();
+            _showSnackBar('统计文件加载成功', Colors.green);
+          } else {
+            _showSnackBar('统计文件格式错误（需为数组）', Colors.red);
+          }
+        }
+      } else {
+        _showSnackBar('统计文件不存在，将创建新文件', Colors.blue);
+        await _subjectStatsFile.create(); // 主动创建空文件
+      }
+    } catch (e) {
+      _showSnackBar('统计文件读取失败：${e.toString()}', Colors.red);
+    }
+
+    if (mounted) setState(() {});
   }
 
-  void _subject_stats_load(List<dynamic> data) {
-    _subjectStats = data
-        .map((e) => SubjectStat.fromJson(e as Map<String, dynamic>))
-        .toList();
+  // 辅助方法：简化 SnackBar 显示
+  void _showSnackBar(String message, Color color) {
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(message),
+          backgroundColor: color,
+          duration: const Duration(seconds: 3),
+        ),
+      );
+    }
   }
 
   Future<void> _saveSubjects() async {
