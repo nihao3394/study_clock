@@ -40,7 +40,6 @@ dependencies:
   file_picker: ^8.0.3 # 文件选择依赖
   shared_preferences: ^2.2.2
   table_calendar: ^3.1.1
-  # 如果用到 color picker
   flutter_colorpicker: ^1.0.3
 
 dev_dependencies:
